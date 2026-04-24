@@ -1,8 +1,14 @@
 # Devfolio submission content (push-to-prod)
 
-All five required long fields drafted below. Copy-paste into the Devfolio
-form OR call `mcp__devfolio__updateHackathonProject` with the UUIDs. No
-AI-generated screenshots — gallery uses real Playwright captures.
+**MCP submission is blocked** — the organizer's required "Deployed URL"
+field has type `short`, which the Devfolio MCP's
+`createHackathonProject` / `updateHackathonProject` APIs reject (HTTP 422:
+*"Project field ... has invalid type 'short'; allowed: radio, checkbox,
+select, image, bool, long"*). This means the project has to be created
+via the Devfolio web UI. The content below is ready to copy-paste into
+that UI; the 5 gallery screenshots are already PUT to Devfolio S3 (see
+"Gallery" below — you'll need to re-upload via the web form, but the
+images are identical to `docs/screenshots/*.png`).
 
 Hackathon: **Push to Prod with Genspark & Claude**
 Slug: `push-to-prod`  ·  Single track: "Hackathon Prizes" (`5e75ce5782bb48e49034bf8ec94033f3`)
