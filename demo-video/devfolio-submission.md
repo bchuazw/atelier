@@ -18,9 +18,11 @@ Slug: `push-to-prod`  ·  Single track: "Hackathon Prizes" (`5e75ce5782bb48e4903
 ## Project name + tagline
 
 **Name:** `Atelier`
-**Tagline:** `Branch, critique, and keep every round of design feedback.`
+**Tagline:** `Branch every critique. Cite every source.`
 
-(Name ≤50, tagline ≤50 per Devfolio validation — both well within.)
+(Name ≤50, tagline ≤50 per Devfolio validation — both well within.
+`Branch every critique. Cite every source.` = 41 chars, punchy, mirrors
+the "Use of Genspark" sponsor story.)
 
 ---
 

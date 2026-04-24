@@ -1,7 +1,7 @@
 # Atelier
 
-> **Branch, critique, and keep every round of design feedback.**
-> An infinite canvas for iterating on landing pages with AI that cites its sources.
+> **Branch every critique. Cite every source.**
+> An infinite canvas for iterating on landing pages with AI that cites its references.
 
 Atelier was built for the [Push to Prod Hackathon with Genspark & Claude](https://devfolio.co/hackathons/push-to-prod) (Singapore, 2026-04-24) — an 8-hour sprint on **internal workflow problems solved with AI**.
 
