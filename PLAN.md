@@ -10,9 +10,25 @@
 
 ## 0. Handoff — read this first
 
-**Status (as of 2026-04-24):** Phases 0–2 shipped. **Phase 3 shipped end-to-end with REAL media** — MiniMax generates the hero image (Genspark turned out to have no public API, so MiniMax replaces it as the media provider; Genspark stays a sponsor name-drop / screen-recording cameo in the demo video). **Phase 4 deploy running** — Supabase project + bucket live, local E2E verified with Playwright (real MiniMax image → Supabase Storage → sandbox proxy → rendered correctly in browser). Render services next.
+**Status (as of 2026-04-24):** Phases 0–4 shipped end-to-end, hosted and verified. **SSE streaming for hero-media generation shipped (Phase 3 task 4).** Genspark turned out to have no public API, so MiniMax owns media generation; Genspark stays a sponsor name-drop / screen-recording cameo in the demo video. **Repo is now private** (github.com/bchuazw/atelier); Render keeps pulling because the GitHub App install has access to private repos.
 
-**Key architecture note (learned the hard way 2026-04-24):** Supabase Storage force-sets `Content-Type: text/plain` + `nosniff` on uploaded HTML files (XSS defense). Direct iframe loads from Supabase URLs won't render. **Fix shipped:** the `sandbox-server` gained a PROXY mode that fetches from Supabase Storage and rewrites Content-Type from the file extension. This means the hosted topology is three Render services, not two (api + web + sandbox-proxy). See §23.
+**Hosted URLs:**
+- Frontend: https://atelier-web.onrender.com
+- Backend API: https://atelier-api-wpx8.onrender.com
+- Sandbox proxy: https://atelier-sandbox.onrender.com
+- Database + assets: Supabase project `wwioczuafjosqceqrqwm` (us-west-1, free tier)
+
+**Key architecture notes (learned the hard way 2026-04-24):**
+- Supabase Storage force-sets `Content-Type: text/plain` + `nosniff` on uploaded HTML files (XSS defense). Direct iframe loads from Supabase URLs won't render. **Fix:** the `sandbox-server` gained a PROXY mode that fetches from Supabase Storage and rewrites Content-Type from the file extension. This is the third Render service.
+- Render free-tier Python can't reach Supabase's `db.<ref>.supabase.co:5432` (IPv6-only). **Fix:** point `ATELIER_DB_URL` at the Supabase **session pooler** at `aws-1-us-west-1.pooler.supabase.com:5432` (IPv4, username `postgres.<ref>`). The transaction pooler on `:6543` breaks asyncpg prepared statements; session pooler on `:5432` works fine.
+
+**Development workflow (enforced from 2026-04-24 onward):**
+1. Run locally (all 3 services) and verify via Playwright
+2. Commit + push to private GitHub
+3. Wait for Render auto-deploy (api + web; sandbox only rebuilds if `sandbox-server/` changed)
+4. Test against live URL with Playwright
+5. Update PLAN.md
+6. Only then start the next big change
 
 **Two sponsors, different roles.** Claude owns the precise HTML edits (generator + critics). **MiniMax** owns media generation (Flux-class image + Hailuo/T2V video) — this replaces what the plan originally had Genspark do (Genspark has no public API, confirmed 2026-04-24). **Genspark stays as a sponsor** via a non-API cameo in the 2-min demo video (e.g., "exported the redesign rationale as a Genspark slide deck for the boss") — the branding is in the artifact, not the code. See §22.
 
@@ -1397,7 +1413,7 @@ Replaces §21.16. Ordered strictly by what unlocks the submission (hosted URL + 
 1. ✅ **Provider abstraction.** Done. New package [apps/api/atelier_api/providers/](apps/api/atelier_api/providers/) with `base.py` (`LlmResponse`, `MediaResponse`), `claude.py` (lifted from old `llm/client.py`), `genspark.py`. The old [apps/api/atelier_api/llm/client.py](apps/api/atelier_api/llm/client.py) is now a re-export shim so `from atelier_api.llm import client as llm` in fork.py + `from atelier_api.llm.client import MODELS` in settings_route.py keep working
 2. ✅ **`providers/genspark.py` with mock fallback.** Done. `generate_image`, `generate_video`, `chat_with_search` all implemented. Mock mode auto-engages when `GENSPARK_API_KEY` is empty — writes a deterministic SVG placeholder with visible `[genspark-mock]` label and the prompt embedded. Real-mode HTTP calls hit `/v1/images/generations`, `/v1/videos/generations`, `/v1/chat/completions` per §22.1; remote URLs are downloaded server-side to dodge CDN-CORS issues per §22.6.4
 3. ✅ **New route `POST /api/v1/nodes/:id/media`.** Done. [apps/api/atelier_api/routes/media.py](apps/api/atelier_api/routes/media.py). Synchronous; the full flow Claude(Haiku draft) → Genspark(mock or real) → Claude(Sonnet rewrite) → clone parent tree → drop media in → write `index.html` → commit. Returns `{node_id, edge_id, sandbox_url, image_prompt, media_url, media_is_mock, model_used, token_usage}`. **Implementation note:** stage media in a temp dir OUTSIDE `variant_dir` because `clone_tree()` does `rmtree(dst)` before `copytree`. Got bitten by this on the first run — see git history for the fix
-4. 🔲 **SSE on `/api/v1/media/jobs/:jobId/stream`.** Not yet wired. The synchronous flow takes ~10–25s (mock) or up to 60s+ (real video); the dialog currently shows rotating "stage" text every 4.5s as a UX placebo. Same `asyncio.Task` + `asyncio.Queue` pattern that Phase 6 AutoReason will reuse. When this lands, also back-port SSE to the existing `/fork` route (still synchronous per §21.8). Events to emit: `prompt-drafted`, `media-rendered`, `html-rewritten`, `node-ready`, `error`
+4. ✅ **SSE on `/api/v1/media/jobs/:job_id/stream`.** Shipped 2026-04-24. [apps/api/atelier_api/jobs.py](apps/api/atelier_api/jobs.py) is the in-memory per-process event bus; [routes/media.py](apps/api/atelier_api/routes/media.py) split into a sync endpoint (legacy, kept for curl) and `POST /nodes/{id}/media/jobs` that returns `{job_id, stream_url}` and kicks work into a background `asyncio.Task`. Events emitted: `drafting-prompt`, `prompt-drafted`, `node-allocated`, `rendering-media`, `media-rendered`, `rewriting-html`, `html-rewritten`, `uploading`, `uploaded`, `node-ready`, `error`, `done` — each with `elapsed_ms` where relevant. Keep-alive `: ping\n\n` every 15s for Cloudflare. Frontend dialog stepper consumes the stream via `EventSource`; dialog auto-closes and opens the Before/After viewer on `node-ready`. Fork still sync — back-port pending if needed
 5. ✅ **"Generate Hero Media" button + dialog.** Done. New "Hero" button on every `VariantNode` (fuchsia, alongside Fork/Pin/Checkpoint). Opens [apps/web/src/components/MediaDialog.tsx](apps/web/src/components/MediaDialog.tsx) with kind toggle (image/video), aspect picker (16:9 / 4:3 / 1:1 / 9:16), kind-aware intent presets, optional intent textarea. On success: refetches tree, auto-pins parent + new child into the Before/After viewer, opens it. Mock-mode disclosure shown in the dialog footer
 6. 🔲 **Media display on the card.** Not yet wired. Today the iframe thumbnail already shows the new hero (since the variant is just a regular variant). A dedicated chip ("hero asset added — flux/mock") on the card would make it more legible. Low priority; the Before/After viewer already tells the story
 
@@ -1459,10 +1475,12 @@ Replaces §21.16. Ordered strictly by what unlocks the submission (hosted URL + 
 
 ## Status
 
-**Phase 3 shipped end-to-end with REAL MiniMax media.** Hero flow verified with Playwright: MiniMax generates a 1280×720 JPEG in ~18s → Supabase Storage upload → sandbox proxy rewrites Content-Type → browser renders a fully-styled warm editorial variant of the seed page. Mock fallback preserved for dev without the key.
+**Phase 3 shipped, hosted, live-SSE-streamed.** End-to-end from the hosted frontend: paste URL → Hero button → live progress stepper ticks through Claude-draft / MiniMax-render / Claude-rewrite / upload (~45–60s total for real images) → Before/After viewer opens auto-pinned to the new variant. Mock fallback preserved for dev without the MiniMax key.
 
-**Phase 4 deploy in flight.** Supabase project `wwioczuafjosqceqrqwm` live (us-west-1, free tier). Storage bucket `variants` public. Postgres connection-stringed. Local E2E fully green against real Supabase. Render services being created via API next.
+**Phase 4 shipped, live.** 3 Render services + Supabase (Postgres + public Storage bucket) + private GitHub repo. Render auto-deploys on every push to `main`.
 
-**Sponsor model (revised):** Claude drives the code hot path (HTML edits + prompts). MiniMax drives media generation. **Genspark — no public API** (confirmed 2026-04-24) so it contributes to the submission via a branded screen-recording cameo in the 2-min Hyperframes video, not via code. Both sponsors visible in the submission artifact; only one in the stack.
+**Workflow from 2026-04-24 on:** local-verify → push → render-deploy → live-verify → PLAN.md update → next step (see §0 handoff).
 
-Submission target: Phase 5 complete — hosted URL + 2-minute Hyperframes demo video + GitHub link. AutoReason and critics explicitly post-submission. See §25 for the ordered task list.
+**Sponsor model:** Claude owns text/code/HTML. MiniMax owns media (image via image-01, video via T2V-01-Director). Genspark has no public API and participates as a sponsor via branded screen-recording cameo in the 2-min demo video.
+
+**Cycle 2 (next):** fidelity pass — upgrade seed fetcher so real product sites (vercel.com / stripe.com / linear.app) seed correctly, add Render keep-warm pinger, spend meter, error boundary. Then Phase 5 (Hyperframes demo video).

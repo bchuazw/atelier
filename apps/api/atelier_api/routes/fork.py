@@ -110,10 +110,15 @@ async def fork_node(parent_id: str, body: ForkIn, session: AsyncSession = Depend
     if not parent.build_path:
         raise HTTPException(status_code=400, detail="Parent has no artifact to fork from. Re-seed the project.")
 
-    parent_index = Path(parent.build_path) / "index.html"
-    if not parent_index.exists():
-        raise HTTPException(status_code=500, detail=f"Parent index.html missing at {parent_index}")
-    parent_html = parent_index.read_text(encoding="utf-8")
+    # Rehydrate from Supabase if the parent's files were evicted between deploys
+    # (Render web services have ephemeral disk).
+    from atelier_api.routes.media import _ensure_parent_materialized
+    try:
+        parent_dir = await _ensure_parent_materialized(parent)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    parent.build_path = str(parent_dir)
+    parent_html = (parent_dir / "index.html").read_text(encoding="utf-8")
 
     # Load project for context (user-provided preferences that flavor every generation).
     project = await session.get(Project, parent.project_id)

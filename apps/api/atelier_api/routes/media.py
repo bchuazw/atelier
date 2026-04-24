@@ -43,6 +43,34 @@ from atelier_api.routes.fork import FORK_SYSTEM, _parse_llm_output
 from atelier_api.sandbox.mutator import apply_html_override, clone_tree
 from atelier_api.storage import storage
 
+
+async def _ensure_parent_materialized(parent: Node) -> Path:
+    """Make sure the parent's files exist on local disk.
+
+    On Render's ephemeral filesystem a prior deploy's variants may no longer
+    be present. If we're in supabase-storage mode, rehydrate from the public
+    bucket before reading. Returns the directory path that is now guaranteed
+    to contain `index.html`.
+    """
+    if not parent.build_path:
+        raise FileNotFoundError("parent node has no build_path")
+    local_dir = Path(parent.build_path)
+    index = local_dir / "index.html"
+    if index.exists():
+        return local_dir
+    # Fall back to the canonical location under the configured assets dir,
+    # even if build_path was absolute and pointed at a now-stale path.
+    canonical = settings.assets_path / "variants" / parent.id
+    if (canonical / "index.html").exists():
+        return canonical
+    await storage.download_variant_tree(parent.id, canonical)
+    if not (canonical / "index.html").exists():
+        raise FileNotFoundError(
+            f"parent {parent.id} has no index.html locally and rehydrate from storage "
+            f"produced no file at {canonical}"
+        )
+    return canonical
+
 log = logging.getLogger(__name__)
 
 router = APIRouter(tags=["media"])
@@ -392,10 +420,12 @@ async def generate_media_variant(
     if not parent.build_path:
         raise HTTPException(status_code=400, detail="Parent has no artifact to base media on. Re-seed the project.")
 
-    parent_index = Path(parent.build_path) / "index.html"
-    if not parent_index.exists():
-        raise HTTPException(status_code=500, detail=f"Parent index.html missing at {parent_index}")
-    parent_html = parent_index.read_text(encoding="utf-8")
+    try:
+        parent_dir = await _ensure_parent_materialized(parent)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    parent.build_path = str(parent_dir)
+    parent_html = (parent_dir / "index.html").read_text(encoding="utf-8")
     project = await session.get(Project, parent.project_id)
 
     try:
@@ -431,17 +461,15 @@ async def _run_media_job_bg(job_id: str, parent_id: str, body: MediaIn) -> None:
                 await jobs.emit(job_id, "done", {"ok": False})
                 return
 
-            parent_index = Path(parent.build_path) / "index.html"
-            if not parent_index.exists():
-                await jobs.emit(
-                    job_id,
-                    "error",
-                    {"message": f"Parent index.html missing at {parent_index}", "stage": "lookup"},
-                )
+            try:
+                parent_dir = await _ensure_parent_materialized(parent)
+            except FileNotFoundError as e:
+                await jobs.emit(job_id, "error", {"message": str(e), "stage": "rehydrate"})
                 await jobs.emit(job_id, "done", {"ok": False})
                 return
 
-            parent_html = parent_index.read_text(encoding="utf-8")
+            parent.build_path = str(parent_dir)
+            parent_html = (parent_dir / "index.html").read_text(encoding="utf-8")
             project = await session.get(Project, parent.project_id)
 
             try:

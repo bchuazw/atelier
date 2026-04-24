@@ -91,6 +91,65 @@ class SupabaseStorage:
                         f"supabase upload failed [{resp.status_code}] {object_path}: {resp.text[:200]}"
                     )
 
+    async def _list_objects(self, client: httpx.AsyncClient, prefix: str) -> list[dict]:
+        """List objects under `prefix` (relative to bucket). Walks subdirectories."""
+        list_url = f"{self.url}/storage/v1/object/list/{self.bucket}"
+        collected: list[dict] = []
+        stack = [prefix.rstrip("/")]
+        while stack:
+            p = stack.pop()
+            resp = await client.post(
+                list_url,
+                headers={"Authorization": f"Bearer {self.service_key}", "apikey": self.service_key, "Content-Type": "application/json"},
+                json={"prefix": p + "/", "limit": 500, "offset": 0},
+            )
+            if resp.status_code >= 400:
+                raise RuntimeError(f"supabase list failed [{resp.status_code}] {p}: {resp.text[:200]}")
+            items = resp.json() or []
+            for it in items:
+                name = it.get("name") or ""
+                full = f"{p}/{name}" if p else name
+                # Folders have id=null in Supabase listings.
+                if it.get("id") is None:
+                    stack.append(full)
+                else:
+                    collected.append({"path": full, "size": (it.get("metadata") or {}).get("size")})
+        return collected
+
+    async def download_variant_tree(self, variant_id: str, dest_dir: Path) -> bool:
+        """Download every file under variants/<id>/ into `dest_dir`.
+
+        Idempotent: if `dest_dir/index.html` already exists we skip the fetch
+        (the variant is already materialized locally for this process)."""
+        index_local = dest_dir / "index.html"
+        if index_local.exists():
+            return False
+
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            objects = await self._list_objects(client, variant_id)
+            if not objects:
+                log.warning("[supabase-storage] no objects to rehydrate for variant %s", variant_id)
+                return False
+            log.info(
+                "[supabase-storage] rehydrating %d file(s) for variant %s into %s",
+                len(objects),
+                variant_id,
+                dest_dir,
+            )
+            for obj in objects:
+                # obj['path'] looks like "<variant_id>/path/to/file"; strip the prefix.
+                rel = obj["path"]
+                if rel.startswith(variant_id + "/"):
+                    rel = rel[len(variant_id) + 1 :]
+                public_url = f"{self.url}/storage/v1/object/public/{self.bucket}/{obj['path']}"
+                resp = await client.get(public_url)
+                resp.raise_for_status()
+                target = dest_dir / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(resp.content)
+        return True
+
     def variant_url(self, variant_id: str, rel_path: str = "") -> str:
         # Prefer the proxy when configured so HTML renders with correct MIME.
         if self.sandbox_public_url:

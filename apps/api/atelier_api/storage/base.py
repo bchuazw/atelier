@@ -36,3 +36,16 @@ class StorageBackend(Protocol):
         Empty rel_path yields the base URL (which serves index.html).
         """
         ...
+
+    async def download_variant_tree(self, variant_id: str, dest_dir: "Path") -> bool:
+        """Materialize a variant's files into `dest_dir`.
+
+        Returns True if anything was fetched (meaning `dest_dir` now holds a
+        usable copy of the variant); False if the variant is already on local
+        disk or not found.
+
+        This is idempotent — calling it on a freshly-populated directory is a
+        cheap no-op. Used on hosted Render where the ephemeral container disk
+        may have lost an older variant's tree between deploys.
+        """
+        ...

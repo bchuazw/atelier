@@ -17,3 +17,7 @@ class LocalStorage:
         if not rel_path:
             return base
         return base + rel_path.lstrip("/")
+
+    async def download_variant_tree(self, variant_id: str, dest_dir: Path) -> bool:
+        # Local storage IS the source of truth; nothing to fetch.
+        return False
