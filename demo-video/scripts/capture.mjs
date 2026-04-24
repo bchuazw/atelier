@@ -100,28 +100,35 @@ async function main() {
   // Close the viewer if it auto-opened (CriticsDialog triggers the compare
   // viewer on a successful apply).
   await page.keyboard.press("Escape");
-  await wait(1000);
+  await wait(2000);
   // Clear the compare pins from the auto-open so the beat-4 manual flow
   // starts from a clean state.
   const clearBtn = page.getByRole("button", { name: /^Clear$/ });
   if (await clearBtn.count()) {
     await clearBtn.first().click();
-    await wait(800);
+    await wait(1000);
   }
+  // Refresh tree + fit view to guarantee both nodes are in React Flow's
+  // rendered viewport before the manual Compare clicks. Without this,
+  // the variant node can still be virtualized off-screen when beat 4 fires.
+  await page.getByRole("button", { name: /Refresh tree/i }).click().catch(() => {});
+  await wait(1500);
+  await page.getByRole("button", { name: /fit view/i }).click().catch(() => {});
+  await wait(2000);
 
   // ---- BEAT 4 — Compare flow: click Compare on A, then B, split view (23s) ----
-  // We can't rely on stable data-ids, so find the Compare buttons by
-  // DOM traversal inside each node. Order: seed (index 0) → variant (1).
+  // Use `.react-flow__node` selector so we only get actual node wrappers,
+  // not edge handles (which also have data-id= attributes). First click
+  // any node with an inactive "Compare" button; second click any OTHER
+  // node whose Compare button isn't in the "A —" active state.
   const firstClick = await page.evaluate(() => {
-    const nodes = Array.from(document.querySelectorAll('[data-id]')).filter(
-      (n) => n.getAttribute('data-id') && !n.getAttribute('data-id').startsWith('reactflow__')
-    );
+    const nodes = Array.from(document.querySelectorAll('.react-flow__node'));
+    if (nodes.length < 2) return 'not-enough-nodes:' + nodes.length;
     const seed = nodes[0];
-    if (!seed) return 'no-seed';
-    const btn = Array.from(seed.querySelectorAll('button')).find((b) =>
-      /^\s*Compare\s*$/.test(b.textContent.trim())
+    const btn = Array.from(seed.querySelectorAll('button')).find(
+      (b) => b.textContent.trim() === 'Compare'
     );
-    if (!btn) return 'no-compare-btn';
+    if (!btn) return 'no-compare-btn on seed; buttons=' + Array.from(seed.querySelectorAll('button')).map(b => b.textContent.trim()).join('|');
     btn.click();
     return 'clicked: ' + btn.textContent.trim();
   });
@@ -130,17 +137,19 @@ async function main() {
   await beat(4, "compare-a-picked", page);
 
   const secondClick = await page.evaluate(() => {
-    const nodes = Array.from(document.querySelectorAll('[data-id]')).filter(
-      (n) => n.getAttribute('data-id') && !n.getAttribute('data-id').startsWith('reactflow__')
-    );
-    const variant = nodes[1];
-    if (!variant) return 'no-variant';
-    const btn = Array.from(variant.querySelectorAll('button')).find((b) =>
-      /Compare/.test(b.textContent)
-    );
-    if (!btn) return 'no-compare-btn';
-    btn.click();
-    return 'clicked: ' + btn.textContent.trim();
+    const nodes = Array.from(document.querySelectorAll('.react-flow__node'));
+    // Find the node whose Compare button is NOT already in the "A —" state
+    for (const node of nodes) {
+      const btn = Array.from(node.querySelectorAll('button')).find((b) => {
+        const t = b.textContent.trim();
+        return /Compare/.test(t) && !t.startsWith('A —');
+      });
+      if (btn) {
+        btn.click();
+        return 'clicked: ' + btn.textContent.trim();
+      }
+    }
+    return 'no-valid-compare-btn';
   });
   console.log(`[capture] beat4-second: ${secondClick}`);
   // The viewer auto-opens on the second click.
@@ -158,9 +167,7 @@ async function main() {
   const promptBar = page.locator('textarea[placeholder*="Ask Atelier"]');
   // Ensure the PromptBar has a target — click the seed node to select it.
   await page.evaluate(() => {
-    const nodes = Array.from(document.querySelectorAll('[data-id]')).filter(
-      (n) => n.getAttribute('data-id') && !n.getAttribute('data-id').startsWith('reactflow__')
-    );
+    const nodes = Array.from(document.querySelectorAll('.react-flow__node'));
     nodes[0] && nodes[0].click();
   });
   await wait(700);
@@ -179,9 +186,9 @@ async function main() {
   // merged node animates into the canvas on next tree refresh, which is
   // what viewers will see — that's the intended shot.
   const mergeResult = await page.evaluate(async () => {
-    const nodes = Array.from(document.querySelectorAll('[data-id]'))
+    const nodes = Array.from(document.querySelectorAll('.react-flow__node'))
       .map((n) => n.getAttribute('data-id'))
-      .filter((id) => id && !id.startsWith('reactflow__'));
+      .filter(Boolean);
     if (nodes.length < 2) return 'not-enough-nodes:' + nodes.length;
     // Merge the two most recent variants. TARGET = latest (keeps its
     // structure), SOURCE = previous (donates aspects).
