@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -9,6 +10,13 @@ from atelier_api.config import settings
 from atelier_api.db.session import init_db
 from atelier_api.keepwarm import start_keepwarm
 from atelier_api.routes import fork, media, nodes, projects, settings_route
+
+# Uvicorn only configures its own loggers; ensure our modules' INFO lines
+# (keepwarm pings, storage rehydrate, SSE events) surface in Render logs.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s — %(message)s",
+)
 
 
 @asynccontextmanager

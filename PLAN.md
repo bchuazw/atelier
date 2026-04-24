@@ -1484,4 +1484,11 @@ Replaces §21.16. Ordered strictly by what unlocks the submission (hosted URL + 
 
 **Sponsor model:** Claude owns text/code/HTML. MiniMax owns media (image via image-01, video via T2V-01-Director). Genspark has no public API and participates as a sponsor via branded screen-recording cameo in the 2-min demo video.
 
-**Cycle 2 (next):** fidelity pass — upgrade seed fetcher so real product sites (vercel.com / stripe.com / linear.app) seed correctly, add Render keep-warm pinger, spend meter, error boundary. Then Phase 5 (Hyperframes demo video).
+**Cycle 2 shipped (2026-04-24):**
+- Fetcher: forces UTF-8 when server omits charset (fixes em-dash / arrow mojibake caught during live verification), proper Accept headers, one-shot retry on transient 5xx, broader analytics-script deny list, auto-injects `<meta charset="utf-8">` on saved seeds.
+- **Paste-HTML seed path** — `POST /projects` now accepts `seed_html` alongside `seed_url`; frontend dialog has a "Paste HTML" tab. Lets us skip real-site fetching entirely for polished demos.
+- **Delete cascade** — `DELETE /projects` removes every variant's files from Supabase via `storage.delete_variant_tree`, so the judging URL stays curated.
+- **Keep-warm** — lifespan-managed background task inside the API pings `ATELIER_KEEPWARM_URLS` (API /healthz + sandbox /healthz) every 10 min. Shipped on Render with the two healthz URLs wired in.
+- **Error boundary** around the canvas — a React tree crash now shows a recoverable panel, not a white screen.
+
+**Cycle 3 (next):** the 2-minute Hyperframes submission video. Scaffold `demo-video/`, Playwright capture script against the hosted URL, composition HTML, TTS narration, render MP4.
