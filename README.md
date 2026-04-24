@@ -18,7 +18,7 @@ Every product team has the same broken loop:
 
 **Atelier fixes the loop.** Every critique is a branch on an infinite canvas you can see, compare, and keep. Every suggestion is **grounded in real landing pages crawled from the open web** — so "make it premium" arrives as *"swap Inter for Cormorant Garamond 700 italic, use Aesop's #EDE5D8 parchment, ghost outlined CTA."*
 
-📽 **2-minute demo:** [`demo-video/atelier-demo.mp4`](demo-video/atelier-demo.mp4) (1920×1080 · 1:56 · 4.3 MB · ElevenLabs narration)
+📽 **Demo:** [`demo-video/atelier-demo.mp4`](demo-video/atelier-demo.mp4) (1920×1080 · 1:40 · 3.8 MB · ElevenLabs narration)
 
 ![Grounded Critics — the headline shot](docs/screenshots/grounded-critics-live.png)
 

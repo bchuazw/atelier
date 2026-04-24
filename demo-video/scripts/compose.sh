@@ -36,39 +36,44 @@ fi
 echo "[compose] video: $INPUT_WEBM"
 echo "[compose] audio: $NARRATION"
 
-# Segment plan (WebM seconds -> output after setpts):
-#   1. intro              2.5-15     @ 1x   -> 12.5s   (landing, template, create, critics click)
-#   2. grounding wait     15-63.5    @ 2.5x -> 19.4s   (compressed Genspark + Claude load)
-#   3. grounded banner    63.5-68    @ 1x   ->  4.5s   (reference chips appear, approve)
-#   4. apply fork         68-106     @ 2.5x -> 15.2s   (compressed rewrite stream)
-#   5. viewer auto-open   106-120    @ 1x   -> 14.0s   (BIG moment — let it breathe)
-#   6. prompt setup       120-127    @ 1x   ->  7.0s   (close viewer, type in PromptBar)
-#   7. prompt fork        127-150    @ 2.5x ->  9.2s   (compressed Sonnet stream)
-#   8. variant lands      150-160    @ 1x   -> 10.0s   (new node animation)
-#   9. merge wait         160-210    @ 3x   -> 16.7s   (compressed Opus merge)
-#  10. merge+outro        210-217.8  @ 1x   ->  7.8s   (merged node + canvas overview)
-#   TOTAL:  ~116.3s  (narration = 109s, so ~7s silent outro)
+# Segment plan (WebM seconds -> output after setpts). Revised for
+# tighter pacing: narration is 93s so we compress loading segments more
+# aggressively + trim the silent outro down to ~5s. Intro audio delay of
+# 2s lets the title beat breathe before the narrator speaks.
+#   1. intro              2.5-15     @ 1x   -> 12.5s  (landing, template, create, critics click)
+#   2. grounding wait     15-63.5    @ 3x   -> 16.2s  (more compressed Genspark + Claude)
+#   3. grounded banner    63.5-68    @ 1x   ->  4.5s  (reference chips appear, approve)
+#   4. apply fork         68-106     @ 3x   -> 12.7s  (more compressed rewrite stream)
+#   5. viewer auto-open   106-120    @ 1x   -> 14.0s  (BIG moment — let it breathe)
+#   6. prompt setup       120-127    @ 1x   ->  7.0s  (close viewer, type in PromptBar)
+#   7. prompt fork        127-150    @ 3x   ->  7.7s  (compressed Sonnet stream)
+#   8. variant lands      150-160    @ 1x   -> 10.0s  (new node animation)
+#   9. merge wait         160-210    @ 4x   -> 12.5s  (compressed Opus merge)
+#  10. merge+outro        210-215    @ 1x   ->  5.0s  (merged node reveal — short outro)
+#   TOTAL:  ~102.1s
+# Audio: adelay=2000|2000 shifts ElevenLabs narration 2s later.
+# Narration runs 2s-95s, video runs 0-102s. Silent intro 2s, outro ~7s.
 
 "$FFMPEG" -y \
   -i "$INPUT_WEBM" \
   -i "$NARRATION" \
   -filter_complex "
     [0:v]trim=start=2.5:end=15,setpts=PTS-STARTPTS[v1];
-    [0:v]trim=start=15:end=63.5,setpts=(PTS-STARTPTS)/2.5[v2];
+    [0:v]trim=start=15:end=63.5,setpts=(PTS-STARTPTS)/3[v2];
     [0:v]trim=start=63.5:end=68,setpts=PTS-STARTPTS[v3];
-    [0:v]trim=start=68:end=106,setpts=(PTS-STARTPTS)/2.5[v4];
+    [0:v]trim=start=68:end=106,setpts=(PTS-STARTPTS)/3[v4];
     [0:v]trim=start=106:end=120,setpts=PTS-STARTPTS[v5];
     [0:v]trim=start=120:end=127,setpts=PTS-STARTPTS[v6];
-    [0:v]trim=start=127:end=150,setpts=(PTS-STARTPTS)/2.5[v7];
+    [0:v]trim=start=127:end=150,setpts=(PTS-STARTPTS)/3[v7];
     [0:v]trim=start=150:end=160,setpts=PTS-STARTPTS[v8];
-    [0:v]trim=start=160:end=210,setpts=(PTS-STARTPTS)/3[v9];
-    [0:v]trim=start=210:end=217.8,setpts=PTS-STARTPTS[v10];
+    [0:v]trim=start=160:end=210,setpts=(PTS-STARTPTS)/4[v9];
+    [0:v]trim=start=210:end=215,setpts=PTS-STARTPTS[v10];
     [v1][v2][v3][v4][v5][v6][v7][v8][v9][v10]concat=n=10:v=1:a=0[vcat];
     [vcat]fps=30,scale=1920:1080[vout];
-    [1:a]aresample=async=1[aout]
+    [1:a]adelay=2000|2000,aresample=async=1[aout]
   " \
   -map "[vout]" -map "[aout]" \
-  -t 120 \
+  -t 103 \
   -c:v libx264 -preset medium -crf 26 -pix_fmt yuv420p -movflags +faststart \
   -c:a aac -b:a 128k -ac 2 \
   "$OUT"
