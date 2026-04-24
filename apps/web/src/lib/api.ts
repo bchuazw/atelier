@@ -70,6 +70,25 @@ export type MediaChildDTO = {
   token_usage: Record<string, unknown>;
 };
 
+export type MediaJobDTO = { job_id: string; stream_url: string };
+
+export type MediaEventType =
+  | "job-started"
+  | "drafting-prompt"
+  | "prompt-drafted"
+  | "node-allocated"
+  | "rendering-media"
+  | "media-rendered"
+  | "rewriting-html"
+  | "html-rewritten"
+  | "uploading"
+  | "uploaded"
+  | "node-ready"
+  | "error"
+  | "done";
+
+export type MediaEvent = { type: MediaEventType; ts: number; data: Record<string, any> };
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -128,6 +147,21 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  // Async streaming path — enqueues a job and returns the SSE stream URL.
+  enqueueMediaJob: (
+    parentId: string,
+    body: {
+      kind: "image" | "video";
+      user_intent?: string;
+      image_model?: string;
+      video_model?: string;
+      aspect?: string;
+    }
+  ) =>
+    request<MediaJobDTO>(`/nodes/${parentId}/media/jobs`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   patchNode: (nodeId: string, body: Partial<{ position_x: number; position_y: number; title: string }>) =>
     request<{ ok: boolean }>(`/nodes/${nodeId}`, {
       method: "PATCH",
@@ -145,3 +179,58 @@ export const api = {
       "/settings/status"
     ),
 };
+
+/**
+ * Subscribe to a media-job SSE stream.
+ * Returns a cleanup function that closes the EventSource.
+ * Calls `onEvent` for every event (including `done`); `onFinal` fires once
+ * when the stream ends (either `done` or connection closed).
+ */
+export function subscribeToMediaJob(
+  streamUrl: string,
+  onEvent: (ev: MediaEvent) => void,
+  onFinal?: (result: { ok: boolean; child?: MediaChildDTO; error?: string }) => void
+): () => void {
+  // streamUrl from the API is like "/api/v1/media/jobs/<id>/stream".
+  // In local dev the Vite proxy forwards /api/*; in hosted mode we need the
+  // absolute URL prefixed with VITE_API_BASE's origin.
+  const absolute =
+    streamUrl.startsWith("http") || !import.meta.env.VITE_API_BASE
+      ? streamUrl
+      : new URL(streamUrl, import.meta.env.VITE_API_BASE).toString();
+
+  const es = new EventSource(absolute);
+  let finalResult: { ok: boolean; child?: MediaChildDTO; error?: string } = { ok: false };
+  let finalized = false;
+
+  es.onmessage = (raw) => {
+    try {
+      const ev = JSON.parse(raw.data) as MediaEvent;
+      onEvent(ev);
+      if (ev.type === "node-ready") {
+        finalResult = { ok: true, child: ev.data as unknown as MediaChildDTO };
+      } else if (ev.type === "error") {
+        finalResult = { ok: false, error: (ev.data as any)?.message ?? "unknown error" };
+      } else if (ev.type === "done") {
+        finalized = true;
+        es.close();
+        onFinal?.(finalResult);
+      }
+    } catch (err) {
+      console.error("SSE parse error", err, raw.data);
+    }
+  };
+  es.onerror = () => {
+    if (finalized) return;
+    finalized = true;
+    es.close();
+    if (!finalResult.error) finalResult = { ok: false, error: "SSE connection error" };
+    onFinal?.(finalResult);
+  };
+  return () => {
+    if (!finalized) {
+      finalized = true;
+      es.close();
+    }
+  };
+}
