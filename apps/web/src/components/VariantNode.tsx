@@ -3,7 +3,7 @@ import clsx from "clsx";
 import type { NodeDTO } from "@/lib/api";
 import { api } from "@/lib/api";
 import { useUI } from "@/lib/store";
-import { GitFork, Eye, Flag, CircleDot, Anchor, Wand2 } from "lucide-react";
+import { GitFork, Eye, Flag, CircleDot, Anchor, Wand2, Download } from "lucide-react";
 
 export type VariantNodeData = {
   node: NodeDTO;
@@ -32,6 +32,7 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
     project,
     openFork,
     openMedia,
+    openExport,
     setCompareA,
     setCompareB,
     compare,
@@ -168,6 +169,17 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
             )}
           >
             <Anchor className="w-3 h-3" /> {isCheckpoint ? "Head" : "Checkpoint"}
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              openExport(node.id);
+            }}
+            disabled={node.build_status !== "ready"}
+            title="Copy the HTML out — take it to Cursor or your editor of choice"
+            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-amber-100 hover:bg-amber-200 text-amber-700 disabled:opacity-40"
+          >
+            <Download className="w-3 h-3" /> Export
           </button>
           {node.sandbox_url && (
             <a

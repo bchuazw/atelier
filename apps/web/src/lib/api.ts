@@ -200,6 +200,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ prompt, model, n, shootout }),
     }),
+  enqueueForkJob: (parentId: string, body: { prompt: string; model?: ModelId }) =>
+    request<MediaJobDTO>(`/nodes/${parentId}/fork/jobs`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   generateMedia: (
     parentId: string,
     body: {

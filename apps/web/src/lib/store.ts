@@ -33,6 +33,8 @@ type UIState = {
   feedbackTargetId: string | null;
   criticsDialogOpen: boolean;
   criticsTargetId: string | null;
+  exportDialogOpen: boolean;
+  exportNodeId: string | null;
   mergeDrag: MergeDrag | null;
   mergeDialog: MergeDialogState | null;
   recentlyMergedId: string | null;
@@ -53,6 +55,8 @@ type UIState = {
   closeFeedback: () => void;
   openCritics: (targetId: string) => void;
   closeCritics: () => void;
+  openExport: (nodeId: string) => void;
+  closeExport: () => void;
   setPreferredModel: (m: ModelId) => void;
   beginMergeDrag: (source_id: string, original_x: number, original_y: number) => void;
   setMergeHover: (target_id: string | null) => void;
@@ -87,6 +91,8 @@ export const useUI = create<UIState>((set) => ({
   feedbackTargetId: null,
   criticsDialogOpen: false,
   criticsTargetId: null,
+  exportDialogOpen: false,
+  exportNodeId: null,
   mergeDrag: null,
   mergeDialog: null,
   recentlyMergedId: null,
@@ -106,6 +112,8 @@ export const useUI = create<UIState>((set) => ({
   closeFeedback: () => set({ feedbackDialogOpen: false, feedbackTargetId: null }),
   openCritics: (targetId) => set({ criticsDialogOpen: true, criticsTargetId: targetId }),
   closeCritics: () => set({ criticsDialogOpen: false, criticsTargetId: null }),
+  openExport: (nodeId) => set({ exportDialogOpen: true, exportNodeId: nodeId }),
+  closeExport: () => set({ exportDialogOpen: false, exportNodeId: null }),
   setPreferredModel: (m) => set({ preferredModel: m }),
   beginMergeDrag: (source_id, original_x, original_y) =>
     set({ mergeDrag: { source_id, hover_target_id: null, original_x, original_y } }),

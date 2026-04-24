@@ -11,7 +11,9 @@ import {
 import clsx from "clsx";
 import {
   api,
+  subscribeToJob,
   type FeedbackItemDTO,
+  type ForkChildDTO,
   type ModelId,
 } from "@/lib/api";
 import { useUI } from "@/lib/store";
@@ -50,6 +52,8 @@ export default function FeedbackDialog() {
   const [message, setMessage] = useState("");
   const [model, setModel] = useState<ModelId>(preferredModel);
   const [stage, setStage] = useState<Stage>("compose");
+  const [applyStage, setApplyStage] = useState<"rewriting" | "uploading" | "done">("rewriting");
+  const [applyElapsed, setApplyElapsed] = useState<Record<string, number | undefined>>({});
   const [items, setItems] = useState<FeedbackItemDTO[]>([]);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
@@ -64,6 +68,8 @@ export default function FeedbackDialog() {
       setMessage("");
       setModel(preferredModel);
       setStage("compose");
+      setApplyStage("rewriting");
+      setApplyElapsed({});
       setItems([]);
       setSelected({});
       setError(null);
@@ -92,7 +98,7 @@ export default function FeedbackDialog() {
     }
   }
 
-  async function apply() {
+  function apply() {
     if (!target) return;
     const chosen = items.filter((it) => selected[it.id]);
     if (chosen.length === 0) {
@@ -100,29 +106,55 @@ export default function FeedbackDialog() {
       return;
     }
     setStage("applying");
+    setApplyStage("rewriting");
+    setApplyElapsed({});
     setError(null);
-    try {
-      const bullets = chosen
-        .map((it, i) => `${i + 1}. [${it.area}] ${it.change} — ${it.rationale}`)
-        .join("\n");
-      const prompt =
-        `Apply the following stakeholder-feedback changes to this variant as a single coherent rewrite. ` +
-        `Honor each item; don't skip. If two items conflict, prefer the one listed earlier.\n\n${bullets}`;
-      const children = await api.fork(target.id, prompt, model, 1, false);
-      const child = children[0];
-      if (!child) throw new Error("Fork returned no child");
-      if (project) {
-        const tree = await api.getTree(project.id, includeArchived);
-        useUI.getState().setTree(tree.project, tree.nodes, tree.edges);
-      }
-      setCompareA(target.id);
-      setCompareB(child.node_id);
-      openViewer();
-      closeFeedback();
-    } catch (e: any) {
-      setError(e?.message || "Apply failed");
-      setStage("review");
-    }
+    const bullets = chosen
+      .map((it, i) => `${i + 1}. [${it.area}] ${it.change} — ${it.rationale}`)
+      .join("\n");
+    const prompt =
+      `Apply the following stakeholder-feedback changes to this variant as a single coherent rewrite. ` +
+      `Honor each item; don't skip. If two items conflict, prefer the one listed earlier.\n\n${bullets}`;
+    const targetId = target.id;
+    api
+      .enqueueForkJob(targetId, { prompt, model })
+      .then((job) =>
+        subscribeToJob<ForkChildDTO>(
+          job.stream_url,
+          (ev) => {
+            if (ev.type === "rewriting-html") setApplyStage("rewriting");
+            if (ev.type === "html-rewritten") {
+              setApplyStage("uploading");
+              setApplyElapsed((p) => ({ ...p, rewriting: ev.data?.elapsed_ms }));
+            }
+            if (ev.type === "uploaded") {
+              setApplyStage("done");
+              setApplyElapsed((p) => ({ ...p, uploading: ev.data?.elapsed_ms }));
+            }
+          },
+          async (result) => {
+            if (!result.ok || !result.child) {
+              setError(result.error || "Apply failed");
+              setStage("review");
+              return;
+            }
+            if (project) {
+              try {
+                const tree = await api.getTree(project.id, includeArchived);
+                useUI.getState().setTree(tree.project, tree.nodes, tree.edges);
+              } catch {}
+            }
+            setCompareA(targetId);
+            setCompareB(result.child.node_id);
+            openViewer();
+            closeFeedback();
+          }
+        )
+      )
+      .catch((e: any) => {
+        setError(e?.message || "Failed to enqueue fork job");
+        setStage("review");
+      });
   }
 
   const selectedCount = Object.values(selected).filter(Boolean).length;
@@ -216,6 +248,50 @@ export default function FeedbackDialog() {
             </div>
           )}
 
+          {stage === "applying" && (
+            <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 space-y-1 text-[12px]">
+              <div className="flex items-center gap-2">
+                {applyStage === "rewriting" ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-700" />
+                ) : (
+                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                )}
+                <span className={applyStage === "rewriting" ? "text-sky-800 font-medium" : "text-zinc-700"}>
+                  Claude rewrites HTML with your {items.filter((it) => selected[it.id]).length} changes
+                </span>
+                {applyElapsed.rewriting != null && (
+                  <span className="ml-auto text-[10px] font-mono text-zinc-500">
+                    {(applyElapsed.rewriting / 1000).toFixed(1)}s
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {applyStage === "uploading" ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-700" />
+                ) : applyStage === "done" ? (
+                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                ) : (
+                  <div className="w-3.5 h-3.5 rounded-full border-2 border-zinc-300" />
+                )}
+                <span
+                  className={
+                    applyStage === "uploading"
+                      ? "text-sky-800 font-medium"
+                      : applyStage === "done"
+                      ? "text-zinc-700"
+                      : "text-zinc-500"
+                  }
+                >
+                  Materializing the new variant
+                </span>
+                {applyElapsed.uploading != null && (
+                  <span className="ml-auto text-[10px] font-mono text-zinc-500">
+                    {applyElapsed.uploading}ms
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
           {error && (
             <div className="text-xs text-rose-500 bg-rose-50 border border-rose-300 rounded px-3 py-2 flex items-center gap-1.5">
               <AlertTriangle className="w-3.5 h-3.5" />

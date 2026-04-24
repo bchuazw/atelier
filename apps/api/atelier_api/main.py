@@ -57,6 +57,7 @@ app.add_middleware(
 app.include_router(projects.router, prefix="/api/v1")
 app.include_router(nodes.router, prefix="/api/v1")
 app.include_router(fork.router, prefix="/api/v1")
+app.include_router(fork.stream_router, prefix="/api/v1")
 app.include_router(media.router, prefix="/api/v1")
 app.include_router(merge.router, prefix="/api/v1")
 app.include_router(feedback.router, prefix="/api/v1")

@@ -12,6 +12,7 @@ import MergeDialog from "./components/MergeDialog";
 import PromptBar from "./components/PromptBar";
 import FeedbackDialog from "./components/FeedbackDialog";
 import CriticsDialog from "./components/CriticsDialog";
+import ExportDialog from "./components/ExportDialog";
 import { useUI } from "./lib/store";
 import { api } from "./lib/api";
 
@@ -60,6 +61,7 @@ export default function App() {
       <MergeDialog />
       <FeedbackDialog />
       <CriticsDialog />
+      <ExportDialog />
       <BeforeAfterViewer />
       <ContextPanel />
     </div>

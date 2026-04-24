@@ -146,7 +146,7 @@ export default function NewProjectDialog({
                     Loading templates…
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-2 max-h-[340px] overflow-y-auto pr-1">
+                  <div className="grid grid-cols-2 gap-2 max-h-[440px] overflow-y-auto pr-1">
                     {templates.map((t) => (
                       <button
                         key={t.id}
@@ -154,15 +154,32 @@ export default function NewProjectDialog({
                         onClick={() => setSelectedTemplateId(t.id)}
                         disabled={running}
                         className={clsx(
-                          "text-left px-3 py-2.5 rounded-lg border transition",
+                          "text-left rounded-lg border transition overflow-hidden flex flex-col",
                           selectedTemplateId === t.id
-                            ? "bg-amber-100 border-amber-500"
-                            : "bg-white border-zinc-200 hover:border-zinc-400"
+                            ? "bg-amber-100 border-amber-500 shadow-md"
+                            : "bg-white border-zinc-200 hover:border-zinc-400 hover:shadow-sm"
                         )}
                       >
-                        <div className="text-sm font-medium text-zinc-900">{t.name}</div>
-                        <div className="text-[11px] text-zinc-500 leading-snug line-clamp-3">
-                          {t.tagline}
+                        {/* Live-iframe thumbnail — same pattern as VariantNode, scaled down */}
+                        <div className="relative h-[128px] bg-zinc-50 border-b border-zinc-200 overflow-hidden">
+                          <iframe
+                            src={`/templates/${t.file}`}
+                            className="absolute top-0 left-0 origin-top-left pointer-events-none"
+                            style={{
+                              width: "1280px",
+                              height: "800px",
+                              transform: "scale(0.225)",
+                              transformOrigin: "top left",
+                            }}
+                            sandbox="allow-scripts allow-same-origin"
+                            loading="lazy"
+                          />
+                        </div>
+                        <div className="p-2.5">
+                          <div className="text-sm font-medium text-zinc-900">{t.name}</div>
+                          <div className="text-[11px] text-zinc-500 leading-snug line-clamp-2">
+                            {t.tagline}
+                          </div>
                         </div>
                       </button>
                     ))}
