@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { X, Loader2, Globe, Code } from "lucide-react";
+import { X, Loader2, Globe, Code, LayoutTemplate } from "lucide-react";
 import clsx from "clsx";
-import { api } from "@/lib/api";
+import { api, type TemplateManifestEntry } from "@/lib/api";
 import { useUI } from "@/lib/store";
 
-type SeedMode = "url" | "html";
+type SeedMode = "url" | "html" | "template";
 
 export default function NewProjectDialog({
   open,
@@ -15,22 +15,33 @@ export default function NewProjectDialog({
 }) {
   const { setTree } = useUI();
   const [name, setName] = useState("");
-  const [mode, setMode] = useState<SeedMode>("url");
+  const [mode, setMode] = useState<SeedMode>("template");
   const [url, setUrl] = useState("");
   const [html, setHtml] = useState("");
+  const [templates, setTemplates] = useState<TemplateManifestEntry[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
       setName("");
-      setMode("url");
+      setMode("template");
       setUrl("");
       setHtml("");
+      setSelectedTemplateId(null);
       setError(null);
       setRunning(false);
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!open || templates.length > 0) return;
+    fetch("/templates/templates.json")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d: TemplateManifestEntry[]) => setTemplates(d))
+      .catch(() => setTemplates([]));
+  }, [open, templates.length]);
 
   if (!open) return null;
 
@@ -39,10 +50,23 @@ export default function NewProjectDialog({
     setRunning(true);
     setError(null);
     try {
+      let seedHtml: string | undefined;
+      let seedUrl: string | undefined;
+      if (mode === "template" && selectedTemplateId) {
+        const tmpl = templates.find((t) => t.id === selectedTemplateId);
+        if (!tmpl) throw new Error("Template not found");
+        const r = await fetch(`/templates/${tmpl.file}`);
+        if (!r.ok) throw new Error(`Failed to load template ${tmpl.file}`);
+        seedHtml = await r.text();
+      } else if (mode === "html" && html.trim()) {
+        seedHtml = html;
+      } else if (mode === "url" && url.trim()) {
+        seedUrl = url.trim();
+      }
       const project = await api.createProject({
         name: name.trim(),
-        seed_url: mode === "url" && url.trim() ? url.trim() : undefined,
-        seed_html: mode === "html" && html.trim() ? html : undefined,
+        seed_url: seedUrl,
+        seed_html: seedHtml,
       });
       const tree = await api.getTree(project.id);
       setTree(tree.project as any, tree.nodes, tree.edges);
@@ -58,6 +82,7 @@ export default function NewProjectDialog({
     !!name.trim() &&
     ((mode === "url" && (!url.trim() || /^https?:\/\//.test(url.trim()))) ||
       (mode === "html" && html.trim().length > 0) ||
+      (mode === "template" && !!selectedTemplateId) ||
       (mode === "url" && !url.trim())); // allow blank URL → hello-world
 
   return (
@@ -90,6 +115,7 @@ export default function NewProjectDialog({
             <div className="flex gap-1 mb-2">
               {(
                 [
+                  { id: "template", label: "Templates", icon: LayoutTemplate },
                   { id: "url", label: "Seed from URL", icon: Globe },
                   { id: "html", label: "Paste HTML", icon: Code },
                 ] as const
@@ -112,7 +138,41 @@ export default function NewProjectDialog({
               ))}
             </div>
 
-            {mode === "url" ? (
+            {mode === "template" ? (
+              <>
+                {templates.length === 0 ? (
+                  <div className="text-[12px] text-zinc-500 bg-zinc-50 border border-zinc-200 rounded-lg p-4 text-center">
+                    <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
+                    Loading templates…
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2 max-h-[340px] overflow-y-auto pr-1">
+                    {templates.map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setSelectedTemplateId(t.id)}
+                        disabled={running}
+                        className={clsx(
+                          "text-left px-3 py-2.5 rounded-lg border transition",
+                          selectedTemplateId === t.id
+                            ? "bg-amber-100 border-amber-500"
+                            : "bg-white border-zinc-200 hover:border-zinc-400"
+                        )}
+                      >
+                        <div className="text-sm font-medium text-zinc-900">{t.name}</div>
+                        <div className="text-[11px] text-zinc-500 leading-snug line-clamp-3">
+                          {t.tagline}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <p className="text-[11px] text-zinc-500 mt-2">
+                  Pick a starting aesthetic. You can fork, feedback, critique, or drag-to-combine from there.
+                </p>
+              </>
+            ) : mode === "url" ? (
               <>
                 <input
                   value={url}

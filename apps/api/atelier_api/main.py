@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from atelier_api.config import settings
 from atelier_api.db.session import init_db
 from atelier_api.keepwarm import start_keepwarm
-from atelier_api.routes import fork, media, merge, nodes, projects, settings_route
+from atelier_api.routes import critics, feedback, fork, media, merge, nodes, projects, settings_route
 
 # Uvicorn only configures its own loggers; ensure our modules' INFO lines
 # (keepwarm pings, storage rehydrate, SSE events) surface in Render logs.
@@ -59,6 +59,8 @@ app.include_router(nodes.router, prefix="/api/v1")
 app.include_router(fork.router, prefix="/api/v1")
 app.include_router(media.router, prefix="/api/v1")
 app.include_router(merge.router, prefix="/api/v1")
+app.include_router(feedback.router, prefix="/api/v1")
+app.include_router(critics.router, prefix="/api/v1")
 app.include_router(settings_route.router, prefix="/api/v1")
 
 

@@ -3,6 +3,7 @@ import { Sparkles, Loader2, Target, ChevronUp, ChevronDown } from "lucide-react"
 import clsx from "clsx";
 import { api } from "@/lib/api";
 import { useUI } from "@/lib/store";
+import ModelPicker from "./ModelPicker";
 
 const QUICK_CHIPS = [
   "make it warmer and more playful",
@@ -13,7 +14,7 @@ const QUICK_CHIPS = [
 ];
 
 export default function PromptBar() {
-  const { project, nodes, selectedNodeId, includeArchived } = useUI();
+  const { project, nodes, selectedNodeId, includeArchived, preferredModel, setPreferredModel } = useUI();
   const [prompt, setPrompt] = useState("");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +39,7 @@ export default function PromptBar() {
     setRunning(true);
     setError(null);
     try {
-      await api.fork(target.id, prompt.trim(), "sonnet", 1, false);
+      await api.fork(target.id, prompt.trim(), preferredModel, 1, false);
       const tree = await api.getTree(project!.id, includeArchived);
       useUI.getState().setTree(tree.project, tree.nodes, tree.edges);
       setPrompt("");
@@ -59,26 +60,29 @@ export default function PromptBar() {
   return (
     <div className="absolute left-1/2 bottom-4 -translate-x-1/2 z-30 w-[min(720px,calc(100%-32px))]">
       <div className="bg-stone-50/90 backdrop-blur border border-zinc-200 rounded-xl shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-3 pt-2 pb-1.5 text-[11px]">
-          <div className="flex items-center gap-1.5 text-zinc-500">
-            <Target className="w-3 h-3" />
+        <div className="flex items-center justify-between px-3 pt-2 pb-1.5 text-[11px] gap-2">
+          <div className="flex items-center gap-1.5 text-zinc-500 min-w-0">
+            <Target className="w-3 h-3 flex-shrink-0" />
             <span>Targeting:</span>
             <span
               className={clsx(
-                "font-medium truncate max-w-[220px]",
+                "font-medium truncate max-w-[200px]",
                 target ? "text-amber-600" : "text-zinc-400"
               )}
             >
               {target?.title || "— pick a node or click the canvas"}
             </span>
           </div>
-          <button
-            onClick={() => setExpanded((v) => !v)}
-            className="text-zinc-500 hover:text-zinc-800"
-            title={expanded ? "Collapse" : "Expand"}
-          >
-            {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
-          </button>
+          <div className="flex items-center gap-1.5">
+            <ModelPicker value={preferredModel} onChange={setPreferredModel} compact />
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              className="text-zinc-500 hover:text-zinc-800"
+              title={expanded ? "Collapse" : "Expand"}
+            >
+              {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
 
         {expanded && (

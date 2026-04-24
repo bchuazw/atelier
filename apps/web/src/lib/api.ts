@@ -115,6 +115,42 @@ export type MergeEvent = { type: MergeEventType; ts: number; data: Record<string
 
 export type StyleAspect = "typography" | "palette" | "layout" | "copy" | "all";
 
+export type ModelId = "haiku" | "sonnet" | "opus";
+
+export type FeedbackItemDTO = {
+  id: string;
+  area: string;
+  change: string;
+  rationale: string;
+};
+
+export type FeedbackAnalyzeDTO = {
+  items: FeedbackItemDTO[];
+  model_used: string;
+  token_usage: Record<string, number>;
+};
+
+export type CriticItemDTO = {
+  id: string;
+  category: string;
+  suggestion: string;
+  rationale: string;
+  severity: "low" | "medium" | "high";
+};
+
+export type CriticsAnalyzeDTO = {
+  critics: CriticItemDTO[];
+  model_used: string;
+  token_usage: Record<string, number>;
+};
+
+export type TemplateManifestEntry = {
+  id: string;
+  name: string;
+  tagline: string;
+  file: string;
+};
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -201,6 +237,19 @@ export const api = {
     body: { source_id: string; aspects: StyleAspect[]; model?: string; user_note?: string }
   ) =>
     request<MediaJobDTO>(`/nodes/${targetId}/merge/jobs`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  feedbackAnalyze: (nodeId: string, body: { message: string; model?: ModelId }) =>
+    request<FeedbackAnalyzeDTO>(`/nodes/${nodeId}/feedback/analyze`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  criticsAnalyze: (
+    nodeId: string,
+    body: { theme: string; aspects?: string[]; model?: ModelId }
+  ) =>
+    request<CriticsAnalyzeDTO>(`/nodes/${nodeId}/critics/analyze`, {
       method: "POST",
       body: JSON.stringify(body),
     }),

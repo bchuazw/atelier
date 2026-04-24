@@ -1,5 +1,15 @@
-import { useState } from "react";
-import { Palette, Plus, Trash2, RefreshCw, BookOpen, Anchor, ArchiveRestore } from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+  Palette,
+  Plus,
+  Trash2,
+  RefreshCw,
+  BookOpen,
+  Anchor,
+  ArchiveRestore,
+  MessageSquareQuote,
+  Gem,
+} from "lucide-react";
 import clsx from "clsx";
 import { api } from "@/lib/api";
 import { useUI } from "@/lib/store";
@@ -11,10 +21,20 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
     openViewer,
     compare,
     nodes,
+    selectedNodeId,
     openContextPanel,
+    openFeedback,
+    openCritics,
     includeArchived,
     setIncludeArchived,
   } = useUI();
+
+  const targetId = useMemo(() => {
+    if (selectedNodeId) return selectedNodeId;
+    if (project?.active_checkpoint_id) return project.active_checkpoint_id;
+    if (project?.working_node_id) return project.working_node_id;
+    return nodes[nodes.length - 1]?.id || null;
+  }, [selectedNodeId, project, nodes]);
   const [refreshing, setRefreshing] = useState(false);
 
   async function refresh(nextIncludeArchived = includeArchived) {
@@ -89,8 +109,24 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
           {project && (
             <>
               <button
+                onClick={() => targetId && openFeedback(targetId)}
+                disabled={!targetId}
+                className="flex items-center gap-1 px-2.5 py-1 rounded bg-sky-100 hover:bg-sky-200 text-sky-700 text-xs disabled:opacity-50"
+                title="Paste stakeholder feedback — AutoReason decomposes and you approve each change"
+              >
+                <MessageSquareQuote className="w-3.5 h-3.5" /> Feedback
+              </button>
+              <button
+                onClick={() => targetId && openCritics(targetId)}
+                disabled={!targetId}
+                className="flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-100 hover:bg-emerald-200 text-emerald-700 text-xs disabled:opacity-50"
+                title="Spawn design critics — suggestions to push toward a chosen theme"
+              >
+                <Gem className="w-3.5 h-3.5" /> Critics
+              </button>
+              <button
                 onClick={openContextPanel}
-                className="flex items-center gap-1 px-2.5 py-1 rounded bg-sky-100 hover:bg-sky-200 text-sky-700 text-xs"
+                className="flex items-center gap-1 px-2.5 py-1 rounded bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs"
                 title="Edit project context — preferences the agent reads before every fork"
               >
                 <BookOpen className="w-3.5 h-3.5" /> Context

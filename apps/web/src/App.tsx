@@ -10,6 +10,8 @@ import ContextPanel from "./components/ContextPanel";
 import ErrorBoundary from "./components/ErrorBoundary";
 import MergeDialog from "./components/MergeDialog";
 import PromptBar from "./components/PromptBar";
+import FeedbackDialog from "./components/FeedbackDialog";
+import CriticsDialog from "./components/CriticsDialog";
 import { useUI } from "./lib/store";
 import { api } from "./lib/api";
 
@@ -56,6 +58,8 @@ export default function App() {
       <ForkDialog />
       <MediaDialog />
       <MergeDialog />
+      <FeedbackDialog />
+      <CriticsDialog />
       <BeforeAfterViewer />
       <ContextPanel />
     </div>

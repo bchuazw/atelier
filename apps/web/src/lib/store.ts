@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { NodeDTO, EdgeDTO, ProjectDTO } from "./api";
+import type { NodeDTO, EdgeDTO, ProjectDTO, ModelId } from "./api";
 
 type CompareSelection = {
   a: string | null;
@@ -29,9 +29,14 @@ type UIState = {
   forkParentId: string | null;
   mediaDialogOpen: boolean;
   mediaParentId: string | null;
+  feedbackDialogOpen: boolean;
+  feedbackTargetId: string | null;
+  criticsDialogOpen: boolean;
+  criticsTargetId: string | null;
   mergeDrag: MergeDrag | null;
   mergeDialog: MergeDialogState | null;
   recentlyMergedId: string | null;
+  preferredModel: ModelId;
   contextPanelOpen: boolean;
   includeArchived: boolean;
   busy: boolean;
@@ -44,6 +49,11 @@ type UIState = {
   closeFork: () => void;
   openMedia: (parentId: string) => void;
   closeMedia: () => void;
+  openFeedback: (targetId: string) => void;
+  closeFeedback: () => void;
+  openCritics: (targetId: string) => void;
+  closeCritics: () => void;
+  setPreferredModel: (m: ModelId) => void;
   beginMergeDrag: (source_id: string, original_x: number, original_y: number) => void;
   setMergeHover: (target_id: string | null) => void;
   endMergeDrag: () => void;
@@ -73,9 +83,14 @@ export const useUI = create<UIState>((set) => ({
   forkParentId: null,
   mediaDialogOpen: false,
   mediaParentId: null,
+  feedbackDialogOpen: false,
+  feedbackTargetId: null,
+  criticsDialogOpen: false,
+  criticsTargetId: null,
   mergeDrag: null,
   mergeDialog: null,
   recentlyMergedId: null,
+  preferredModel: "sonnet" as ModelId,
   contextPanelOpen: false,
   includeArchived: false,
   busy: false,
@@ -87,6 +102,11 @@ export const useUI = create<UIState>((set) => ({
   closeFork: () => set({ forkDialogOpen: false, forkParentId: null }),
   openMedia: (parentId) => set({ mediaDialogOpen: true, mediaParentId: parentId }),
   closeMedia: () => set({ mediaDialogOpen: false, mediaParentId: null }),
+  openFeedback: (targetId) => set({ feedbackDialogOpen: true, feedbackTargetId: targetId }),
+  closeFeedback: () => set({ feedbackDialogOpen: false, feedbackTargetId: null }),
+  openCritics: (targetId) => set({ criticsDialogOpen: true, criticsTargetId: targetId }),
+  closeCritics: () => set({ criticsDialogOpen: false, criticsTargetId: null }),
+  setPreferredModel: (m) => set({ preferredModel: m }),
   beginMergeDrag: (source_id, original_x, original_y) =>
     set({ mergeDrag: { source_id, hover_target_id: null, original_x, original_y } }),
   setMergeHover: (target_id) =>

@@ -1,0 +1,38 @@
+[
+  {
+    "id": "editorial-serif",
+    "name": "Editorial Serif",
+    "tagline": "Premium publication vibe — Playfair H1 with italics, deep ink on off-white.",
+    "file": "editorial-serif.html"
+  },
+  {
+    "id": "kinetic-bold",
+    "name": "Kinetic Bold",
+    "tagline": "Swiss-brutalist energy — massive Inter Black, mono body, one hot accent.",
+    "file": "kinetic-bold.html"
+  },
+  {
+    "id": "warm-minimal",
+    "name": "Warm Minimal",
+    "tagline": "Calm and human — cream + terracotta, soft rounded corners, lots of whitespace.",
+    "file": "warm-minimal.html"
+  },
+  {
+    "id": "glassmorphic-tech",
+    "name": "Glassmorphic Tech",
+    "tagline": "Cool product feel — dark purple gradient, frosted cards, cyan/violet accents.",
+    "file": "glassmorphic-tech.html"
+  },
+  {
+    "id": "vintage-poster",
+    "name": "Vintage Poster",
+    "tagline": "Retro travel magazine — mustard + forest + burnt orange, thick framed hero.",
+    "file": "vintage-poster.html"
+  },
+  {
+    "id": "tropical-playful",
+    "name": "Tropical Playful",
+    "tagline": "Friendly consumer-app — bright teal + coral, pill buttons, soft shadows.",
+    "file": "tropical-playful.html"
+  }
+]
