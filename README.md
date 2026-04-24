@@ -20,7 +20,9 @@ Every product team has the same broken loop:
 
 📽 **Demo:** [`demo-video/atelier-demo.mp4`](demo-video/atelier-demo.mp4) (1920×1080 · 1:43 · 4.8 MB · ElevenLabs narration)
 
-![Grounded Critics — the headline shot](docs/screenshots/grounded-critics-live.png)
+![Atelier canvas — seed, two Claude variants, and an Opus-merged synthesis connected by dashed merge edges](docs/screenshots/canvas-with-merge.png)
+
+*A real session: one seed (Warm Minimal Plume) branches into two variants — one via grounded Critics ("Premium Luxury Dark Rewrite"), one via a PromptBar fork ("Serif italic hero heading"). Drag one onto the other and Opus synthesizes a fourth node with dashed edges showing each parent's contribution.*
 
 ---
 
@@ -259,10 +261,10 @@ To deploy:
 
 | | |
 |---|---|
-| ![Grounded critics](docs/screenshots/grounded-critics-live.png) | ![Canvas with two nodes](docs/screenshots/canvas-two-nodes.png) |
-| *Grounded Critics — Genspark pulls 3 live landing pages, Claude cites them with specific hex codes + typography* | *Canvas — every variant is a live-iframe node, edges show the prompt that spawned each child* |
-| ![Full-page side-by-side viewer](docs/screenshots/viewer-side-by-side.png) | ![Template picker](docs/screenshots/ux-fixes-new-project.png) |
-| *Full-page Side-by-Side viewer comparing the seed (Warm Minimal) to the grounded-critics luxury variant* | *Template picker with vibe chips (PREMIUM / BRUTALIST / CALM / FUTURISTIC) and guided hints* |
+| ![Grounded critics](docs/screenshots/grounded-critics-live.png) | ![Feedback AutoReason decomposition](docs/screenshots/feedback-autoreason.png) |
+| **Grounded Critics** — Genspark pulls 3 live landing pages (Dribbble / Pinterest / Awwwards chips); Claude cites them with specific hex codes + typography. Severity-tagged, user approves a subset. | **Feedback (AutoReason)** — paste a stakeholder paragraph; Sonnet decomposes it into 6 atomic changes with category tags (PALETTE / COPY / TYPOGRAPHY) + rationale. One rewrite applies them all. |
+| ![Full-page side-by-side viewer](docs/screenshots/viewer-side-by-side.png) | ![Template picker with vibe chips](docs/screenshots/ux-fixes-new-project.png) |
+| **Compare viewer** — Side-by-side shows both FULL pages scaled to fit (no cropped halves). Also has Split and Overlay modes + Desktop/Tablet/Mobile viewports via keyboard shortcuts. | **Template picker** — 6 curated aesthetic starters with vibe chips (PREMIUM / BRUTALIST / CALM / FUTURISTIC / RETRO / PLAYFUL). Each card renders a live iframe of the actual HTML. |
 
 ## Status (2026-04-24)
 
