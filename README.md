@@ -1,198 +1,269 @@
 # Atelier
 
-An infinite canvas for iterative frontend craft. Seed a URL, fork a variant via Claude, compare before/after with an interactive sliding iframe viewer.
+> **Branch, critique, and keep every round of design feedback.**
+> An infinite canvas for iterating on landing pages with AI that cites its sources.
 
-See [PLAN.md](PLAN.md) for the full design doc.
-
----
-
-## What's in the box (v0.1)
-
-- **Canvas** (React Flow): every variant is a draggable node with a live thumbnail. Edges labeled with the prompt that spawned each child.
-- **Seed from URL**: paste a URL, backend fetches it with httpx + BeautifulSoup, inlines stylesheets and images under `assets/variants/<seed_id>/`.
-- **Fork with Claude**: pick a model (Haiku / Sonnet / Opus), type a prompt, get a modified variant with reasoning trace + token usage stamped on the node.
-- **Before/After viewer**: sliding divider, desktop/tablet/mobile toggles, overlay mode, hold-Space to flip A fullscreen. Two real interactive iframes (forms, animations, JS all work).
-- **Sandbox server**: one tiny Node process serves every variant's static bundle from `/variant/<id>/*`. No dev-server-per-variant.
-- **BYOK**: `.env.local` key or POST to `/api/v1/settings/api-key`.
-
-What's **not** here yet (intentionally cut for MVP — on the roadmap in PLAN.md §14):
-
-- AutoReason multi-iteration refinement loop (fork currently does single generation)
-- Critic agents (accessibility / performance / brand / conversion)
-- Feedback parsing + Playwright live-site inspection
-- Voice feedback capture
-- Pipeline recipes (Gemini → Kling → component)
-- Code mode (tree-sitter, diffs)
-- Export formats (PR descriptions, evolution MP4)
-- Meeting Mode
+Atelier was built for the [Push to Prod Hackathon with Genspark & Claude](https://devfolio.co/hackathons/push-to-prod) (Singapore, 2026-04-24) — an 8-hour sprint on **internal workflow problems solved with AI**.
 
 ---
 
-## Requirements
+## The internal-workflow problem
 
-- **Node** ≥ 20 (tested on Node 25.6)
-- **Python** ≥ 3.11 (tested on 3.12)
-- **pip** (no `uv` required)
-- **Git Bash** or a POSIX shell on Windows, or macOS/Linux bash/zsh
+Every product team has the same broken loop:
+
+- A PM says "make it more premium."
+- A designer tries three things in parallel, loses two.
+- Stakeholder replies "no, more like Aesop."
+- AI tools make it worse — one-shot regeneration overwrites the last variant, and *"use a more modern palette"* is meaningless advice.
+
+**Atelier fixes the loop.** Every critique is a branch on an infinite canvas you can see, compare, and keep. Every suggestion is **grounded in real landing pages crawled from the open web** — so "make it premium" arrives as *"swap Inter for Cormorant Garamond 700 italic, use Aesop's #EDE5D8 parchment, ghost outlined CTA."*
+
+📽 **2-minute demo:** [`demo-video/atelier-demo.mp4`](demo-video/atelier-demo.mp4) (1920×1080 · 1:56 · 4.3 MB)
+
+---
+
+## How the sponsor stacks are used
+
+### Claude (Anthropic)
+
+Claude is the brain of every generative moment. Four distinct integrations, each model picked for the job:
+
+| Flow | Model | What it does |
+|---|---|---|
+| **Fork rewrites** | Haiku 4.5 / Sonnet 4.6 / Opus 4.7 (user's pick) | Rewrites the full HTML given the user's instruction + project context. Streams back via SSE. |
+| **Design Critics** | Sonnet | Returns strict-JSON suggestions with `{category, severity, rationale}` against a target theme. Grounded in Genspark-crawled references (see below). |
+| **Drag-to-combine merge** | Opus | Synthesizes two sibling variants into a new branch. Preserves the target's structure, imports chosen aspects (typography / palette / layout / copy) from the source. |
+| **Feedback decomposition (AutoReason-style)** | Sonnet | Extracts atomic change items from a multi-point stakeholder paragraph; user approves the checklist. |
+
+- **Prompt caching** on the long system prompts (critics rubric, merge rubric) via `cache_control: ephemeral` → ~90% cost drop on follow-up calls within a 5-minute window.
+- **BYOK** at runtime via `POST /settings/api-key`, or env `ANTHROPIC_API_KEY`. `/settings/status` reports which is active so the UI can warn.
+- Code: [apps/api/atelier_api/providers/claude.py](apps/api/atelier_api/providers/claude.py)
+
+### Genspark
+
+Genspark's `@genspark/cli` (`gsk` binary) is wired in as a **grounded research layer for the Critics feature** — this is the integration that turns Claude's critiques from "AI slop" into "cite-your-sources."
+
+When a user enables **"Ground with Genspark research"** in the Critics dialog:
+
+1. Backend calls `gsk web_search "<theme> landing page design"` → top 6 URLs.
+2. Parallel `gsk crawler` fan-out on the top 3 → full page markdown.
+3. That markdown is injected into Claude's critics prompt as `"REAL-WORLD REFERENCES"` context.
+4. Claude now returns suggestions like *"Swap Inter for Cormorant Garamond — every Awwwards luxury winner uses editorial serifs"* and *"Replace terracotta with burnished gold #B89A5A, matching Dribbble's luxury category consensus."*
+5. The UI renders the reference URLs as clickable chips so users can verify citations.
+
+- **Why crawler fan-out and not `batch_crawl_url_and_answer`?** We tried the batch endpoint first; on the free plan it returned `"No content found"` on every URL. Individual `crawler` calls on the same URLs returned full markdown. So we fan out — still fast (~10s for 3 sites on top of Claude's ~25s).
+- **Graceful fallback:** missing `GENSPARK_API_KEY` or missing `gsk` binary → feature silently degrades to Claude-only. Users see a "Genspark returned no references" notice; nothing breaks.
+- **Windows subprocess fix:** `gsk` resolves to `gsk.CMD` on Windows, which `asyncio.create_subprocess_exec` can't execute (WinError 193). We offload to a thread via `asyncio.to_thread(subprocess.run)`.
+- Code: [apps/api/atelier_api/providers/genspark.py](apps/api/atelier_api/providers/genspark.py)
+
+---
+
+## What you can do in Atelier
+
+- **Seed a project** from a URL, pasted HTML, or one of 6 curated aesthetic templates (Editorial Serif, Kinetic Bold, Warm Minimal, Glassmorphic Tech, Vintage Poster, Tropical Playful — each tagged with a one-word vibe chip).
+- **Fork with Claude** from any node — type a prompt, pick your model, get a child variant with its full HTML rewritten. SSE stream shows per-step timing.
+- **Spawn grounded critics** — name a target vibe, toggle Genspark grounding, get cited suggestions, approve a subset, one rewrite ships them all.
+- **Drag one variant onto another** → MergeDialog fires, Opus combines them, dashed edges show which parent contributed what.
+- **Paste stakeholder feedback** → Claude decomposes the paragraph into atomic change items (AutoReason-style); user approves the checklist.
+- **Click Compare on any two nodes** → full-page side-by-side viewer with Desktop / Tablet / Mobile viewports (`1` / `2` / `3`), Split (draggable divider), and Overlay modes (`S` / `D` / `O`).
+- **Export any variant** → Copy HTML, Download `.html`, or Download `.zip` (bundles HTML + every media asset). Built for "take the result to Cursor" flows.
+- **Checkpoint a branch** → older siblings/ancestors archive (still in DB, hidden from default view) to keep the canvas fast. Toggle `Show archived` anytime.
+
+---
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                         USER (browser)                            │
+│                    atelier-web.onrender.com                       │
+└────────────────────────────┬─────────────────────────────────────┘
+                             │
+               ┌─────────────┼─────────────┐
+               │             │             │
+               ▼             ▼             ▼
+   ┌────────────────┐  ┌─────────┐  ┌──────────────────┐
+   │  Render Static │  │ Render  │  │  Render Web      │
+   │  Vite SPA      │  │ Node    │  │  FastAPI         │
+   │  React Flow    │  │ sandbox │  │  Python 3.11     │
+   │  Tailwind      │  │ proxy   │  │                  │
+   └────────────────┘  └────┬────┘  └────┬─────────────┘
+                            │            │
+                            ▼            ▼
+                    ┌───────────────────────────────┐
+                    │      Supabase (US West)        │
+                    │  • Postgres (variants tree)    │
+                    │  • Storage (variant HTML + assets) │
+                    └───────────────────────────────┘
+
+External services the backend calls:
+  • Anthropic (Claude Haiku/Sonnet/Opus) — every generative moment
+  • Genspark (gsk CLI → web_search + crawler) — critics grounding
+  • MiniMax (image-01, T2V-01-Director) — hero-media generation (optional)
+```
+
+- **Why React Flow over tldraw:** purpose-built for tree/graph UIs with custom interactive nodes. Each variant is a 260×300 card with a live iframe thumbnail.
+- **Why SQLite → Postgres:** started single-user local; model code migrates to Postgres with a `DATABASE_URL` swap. Hosted uses Supabase session pooler (`aws-1-us-west-1.pooler.supabase.com:5432`) to sidestep Render's IPv6 limitation on direct Postgres hosts.
+- **Why a separate sandbox-server:** Supabase Storage forces `text/plain` on HTML objects, which breaks iframe rendering. The sandbox server (80-line Node) proxies variant URLs with the correct `Content-Type`.
+- **Why SSE over WebSockets:** streaming is one-way (server → client) for our flows; SSE gives auto-reconnect + works through every proxy. `asyncio.Queue` event bus in [apps/api/atelier_api/jobs.py](apps/api/atelier_api/jobs.py) fans events to connected clients per job.
 
 ---
 
 ## Setup
 
-```bash
-# 1. Configure your Anthropic key
-cp .env.example .env.local
-# then edit .env.local and replace ANTHROPIC_API_KEY=...
+### Requirements
 
-# 2. Install
+- **Node** ≥ 20 (tested on 25.6)
+- **Python** ≥ 3.11 (tested on 3.12)
+- **Git Bash** or POSIX shell on Windows, or macOS/Linux bash/zsh
+- **Anthropic API key** (required)
+- **Genspark API key** + `@genspark/cli` installed globally (optional — required only for grounded critics)
+
+### Install
+
+```bash
+# 1. Clone + configure
+git clone https://github.com/bchuazw/atelier.git
+cd atelier
+cp .env.example .env.local
+# edit .env.local:
+#   ANTHROPIC_API_KEY=sk-ant-...
+#   GENSPARK_API_KEY=gsk-...   (optional)
+#   MINIMAX_API_KEY=...         (optional)
+
+# 2. Install deps
 cd apps/api && pip install -e . && cd ../..
 cd apps/web && npm install && cd ../..
 
-# (no install needed for sandbox-server — uses Node stdlib)
+# 3. (Optional) Install Genspark CLI for grounded critics
+npm install -g @genspark/cli
 ```
 
----
+### Run
 
-## Run it
-
-Three services: FastAPI (8000), sandbox server (4100), Vite (3000).
-
-**Option A — one command** (POSIX shell):
+**One command** (all three services):
 
 ```bash
 npm run dev
 ```
 
-**Option B — three terminals**:
+This starts the API (`:8000`), sandbox-server (`:4100`), and web (`:3000`) in parallel. Open **http://localhost:3000**.
+
+**Three terminals** if you prefer:
 
 ```bash
 # Terminal 1 — backend
-cd apps/api
-python -m uvicorn atelier_api.main:app --reload --port 8000
+cd apps/api && python -m uvicorn atelier_api.main:app --reload --port 8000
 
 # Terminal 2 — sandbox server
-cd sandbox-server
-ATELIER_ASSETS_DIR=../assets node server.js
+cd sandbox-server && ATELIER_ASSETS_DIR=../assets node server.js
 
 # Terminal 3 — frontend
-cd apps/web
-npm run dev
+cd apps/web && npm run dev
 ```
 
-Open **http://localhost:3000**.
+---
+
+## Demo flow (2 minutes)
+
+1. **Pick a template** from 6 curated aesthetics (or paste HTML / URL). Start from **Warm Minimal** for maximum contrast with luxury critiques.
+2. **Open Critics** → theme `premium luxury` → toggle **Ground with Genspark research**. ~35s later, 8 suggestions with hex codes appear, each citing a real landing page (Aesop, Awwwards, Dribbble).
+3. **Apply.** A new variant lands on the canvas as a child node. Before/after viewer auto-opens, both full pages side-by-side.
+4. **Compare any two.** Click the `Compare` button on any node (Columns icon, cyan). TopBar pill guides the flow. Viewer opens, full-page side-by-side with viewport keys `1/2/3`.
+5. **Drag one variant onto another** → Opus merges them. Dashed edges show which parent donated what.
+6. **Export** any variant as HTML, or bundle HTML + media assets as `.zip`. Paste into Cursor / VS Code / your editor.
 
 ---
 
-## Demo flow
-
-1. Click **"Create a new project"**, give it a name, paste a URL (try `https://example.com` for a fast smoke test).
-2. The **seed node** appears on the canvas with a live thumbnail.
-3. Click **"Fork"** on the seed, type a prompt (e.g. *"make the hero warmer and bolder"*), pick Haiku for speed, click **Fork**.
-4. Claude generates a variant; it appears as a child node with its own thumbnail.
-5. The **Before/After viewer** auto-opens comparing seed vs variant. Drag the divider, toggle viewports, hold **Space** to flip A fullscreen.
-6. To compare any two nodes: click one (pins as **A**), click a second (pins as **B**) — viewer opens.
-
----
-
-## Project layout
+## Repo layout
 
 ```
 atelier/
 ├── apps/
-│   ├── api/                # FastAPI + SQLAlchemy + SQLite
+│   ├── api/                        # FastAPI + SQLAlchemy + Python 3.11
 │   │   └── atelier_api/
 │   │       ├── main.py
-│   │       ├── config.py
-│   │       ├── db/{models,session}.py
-│   │       ├── llm/client.py
-│   │       ├── sandbox/{fetcher,mutator}.py
-│   │       └── routes/{projects,nodes,fork,settings_route}.py
-│   └── web/                # Vite + React + React Flow
+│   │       ├── providers/          # claude.py, genspark.py, minimax.py
+│   │       ├── routes/             # projects, nodes, fork, media, merge, feedback, critics, settings
+│   │       ├── db/                 # models.py, session.py
+│   │       ├── sandbox/            # fetcher, mutator
+│   │       └── storage/            # local + supabase backends
+│   └── web/                        # Vite + React 18 + Tailwind + React Flow
 │       └── src/
-│           ├── App.tsx
-│           ├── main.tsx
-│           ├── components/
-│           │   ├── Canvas.tsx
-│           │   ├── VariantNode.tsx
-│           │   ├── BeforeAfterViewer.tsx
-│           │   ├── ForkDialog.tsx
-│           │   ├── NewProjectDialog.tsx
-│           │   ├── TopBar.tsx
-│           │   └── EmptyState.tsx
-│           └── lib/{api,store}.ts
-├── sandbox-server/         # 80-line Node static server for /variant/<id>/*
-│   └── server.js
-├── assets/                 # variant artifacts (gitignored) — created on first run
-│   └── variants/<node_id>/index.html + assets/
-├── scripts/
-│   └── dev.sh
-├── PLAN.md                 # full design spec
-├── .env.example
-└── README.md
+│           ├── components/         # Canvas, VariantNode, BeforeAfterViewer, ForkDialog,
+│           │                       #   MediaDialog, MergeDialog, FeedbackDialog, CriticsDialog,
+│           │                       #   ExportDialog, TopBar, PromptBar, NewProjectDialog, …
+│           └── lib/api.ts          # all backend calls + SSE subscribe helpers
+├── sandbox-server/                 # 80-line Node static proxy for /variant/<id>/*
+├── demo-video/                     # capture.mjs, narrate.mjs, composition.html, narration.md
+├── assets/                         # variant artifacts (gitignored)
+├── render.yaml                     # 3-service Render blueprint
+└── PLAN.md                         # full design spec (30+ pages)
 ```
-
-SQLite file lives at `apps/api/atelier.db`. Delete it to reset all state.
 
 ---
 
 ## API surface
 
 ```
-GET  /healthz
-GET  /api/v1/settings/status
-POST /api/v1/settings/api-key          { api_key }
-GET  /api/v1/projects
-POST /api/v1/projects                  { name, seed_url? }
-GET  /api/v1/projects/:id/tree
+# Projects
+GET    /api/v1/projects
+POST   /api/v1/projects                 { name, seed_url? | seed_html? }
+GET    /api/v1/projects/:id/tree        ?include_archived=true
+PATCH  /api/v1/projects/:id             { context?, active_checkpoint_id?, clear_checkpoint? }
 DELETE /api/v1/projects/:id
-GET  /api/v1/nodes/:id
-PATCH /api/v1/nodes/:id                { position_x, position_y, title }
-GET  /api/v1/nodes/:id/ancestors
-POST /api/v1/nodes/:id/fork            { prompt, model, n }
-```
 
-Sandbox server:
+# Nodes
+GET    /api/v1/nodes/:id
+PATCH  /api/v1/nodes/:id                { position_x?, position_y?, pinned?, title? }
+GET    /api/v1/nodes/:id/ancestors
+GET    /api/v1/nodes/:id/export         # → {html, media_assets[], lineage, sandbox_url}
+GET    /api/v1/nodes/:id/export/zip     # → application/zip (HTML + assets)
 
-```
-GET http://localhost:4100/healthz
-GET http://localhost:4100/variant/<node_id>/[path]   # serves static files
+# Generative jobs (all SSE-streamed)
+POST   /api/v1/nodes/:id/fork/jobs         { prompt, model }
+POST   /api/v1/nodes/:id/media/jobs        { prompt, kind: image|video }
+POST   /api/v1/nodes/:id/merge/jobs        { source_id, aspects[], model }
+GET    /api/v1/{flow}/jobs/:job_id/stream
+
+# Analysis
+POST   /api/v1/nodes/:id/feedback/analyze  { message, model? }
+POST   /api/v1/nodes/:id/critics/analyze   { theme, aspects?, model?, use_grounding? }
 ```
 
 ---
 
-## Deviations from the plan
+## Deployment (Render + Supabase)
 
-PLAN.md locked in Next.js + tldraw + Postgres. Implementation uses:
+Three Render services defined in [render.yaml](render.yaml):
 
-| Plan | Reality | Why |
-|------|---------|-----|
-| Next.js 15 | **Vite + React 18** | Canvas-heavy SPA; SSR is dead weight here. Vite boot is ~2s vs Next's ~8s. |
-| tldraw | **React Flow 11** | React Flow is purpose-built for tree/graph UIs with custom interactive nodes. tldraw is a freeform whiteboard — embedding iframes + buttons in custom shapes is fighting the lib. |
-| Postgres | **SQLite** (as already updated in PLAN) | Single-user local; zero setup. Model code migrates to Postgres with a URL swap. |
-| Redis | Dropped for v1 | No multi-process pubsub needed single-user. |
-| pnpm workspaces | Independent packages | `apps/web` uses npm; `apps/api` uses pip. No cross-package TS imports to coordinate yet. |
+- `atelier-api` (Python) — FastAPI, installs `@genspark/cli` at build time
+- `atelier-web` (Static) — Vite build, rewrites `/*` to `/index.html`
+- `atelier-sandbox` (Node) — proxies variant iframes with correct `Content-Type`
 
-Everything else (data model, sandbox architecture, Before/After viewer UX) matches the plan.
+One Supabase project for:
+- Postgres (via session pooler, IPv4)
+- Storage bucket `variants` (public, HTML served via sandbox proxy)
 
----
+To deploy:
 
-## Troubleshooting
-
-**"No Anthropic API key"** — check `.env.local` has `ANTHROPIC_API_KEY=sk-ant-...` or POST to `/api/v1/settings/api-key` from a tool like Postman.
-
-**"Forking will fail"** banner in the UI — same as above.
-
-**Variant shows up blank** — the seed fetcher may have failed to inline some assets. Check `apps/api/atelier.db` via `sqlite3` to see `build_status`. Retry with a simpler seed URL like `https://example.com`.
-
-**Port already in use** — change `ATELIER_API_PORT`, `ATELIER_SANDBOX_PORT`, or `ATELIER_WEB_PORT` in `.env.local` (for the web port you'll also need to update `apps/web/vite.config.ts` proxy target).
-
-**Reset everything** — delete `apps/api/atelier.db` and `assets/variants/*`.
+1. Create services from `render.yaml` via `render blueprint deploy`
+2. Set secrets in each service: `ANTHROPIC_API_KEY`, `GENSPARK_API_KEY`, `MINIMAX_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ATELIER_DB_URL`, `ATELIER_SANDBOX_PUBLIC_URL`, `ATELIER_ALLOWED_ORIGINS`.
+3. Push → auto-deploys.
 
 ---
 
-## Security
+## Status (2026-04-24)
 
-- `.env.local` is gitignored. Never commit it.
-- The Anthropic key lives in process memory + the SQLite-adjacent env. Do not share the repo directory.
-- The sandbox server sets `Access-Control-Allow-Origin: *` and `Content-Security-Policy: frame-ancestors *` so the viewer can embed any variant. Fine for local dev; tighten before any public deploy.
-- Variant HTML is generated by the LLM and served with scripts enabled inside a sandboxed iframe. Treat variant content as untrusted JS.
+- ✅ Feature-complete for submission (cycles 1–7)
+- ✅ Local stack: fork, media, merge, feedback, critics (with Genspark grounding), drag-to-combine, export, compare, checkpoint — all verified end-to-end
+- ✅ Render deploy: web + sandbox live; API suspended on free tier between testing — resume before submission
+- ✅ 2-minute Devfolio-ready demo video recorded locally (see [demo-video/final-plan.md](demo-video/final-plan.md))
+
+See [PLAN.md](PLAN.md) for the cycle-by-cycle build log and architectural decisions.
+
+---
+
+## License
+
+MIT (intended). The repo is public at <https://github.com/bchuazw/atelier> for judge verification.

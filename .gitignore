@@ -44,3 +44,9 @@ Thumbs.db
 *.jpeg
 !apps/web/public/**/*.png
 !apps/web/public/**/*.jpg
+
+# Demo video working files — keep the final MP4, exclude the 17MB WebM + intermediates
+demo-video/assets/screencaps/*.webm
+demo-video/assets/voiceover.wav
+demo-video/assets/voiceover.mp3
+!demo-video/assets/screencaps/*.png

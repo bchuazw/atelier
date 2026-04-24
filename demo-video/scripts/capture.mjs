@@ -62,7 +62,9 @@ async function main() {
   await wait(500);
   // Templates tab is the default. Pick Warm Minimal — calm cream+terracotta
   // so the premium-luxury critic beat has maximum contrast on apply.
-  await page.getByRole("button", { name: /Warm Minimal Calm and human/i }).click();
+  // Button's accessible name concatenates all child text (now includes the
+  // CALM vibe chip). Match loosely on "Warm Minimal".
+  await page.getByRole("button", { name: /Warm Minimal/i }).click();
   await wait(700);
   await beat(2, "template-picked", page);
   await page.getByRole("button", { name: "Create", exact: true }).click();
