@@ -38,12 +38,13 @@ assets/
 .DS_Store
 Thumbs.db
 
-# Local artifacts
+# Local artifacts — loose images at repo root are Playwright-run debris.
 *.png
 *.jpg
 *.jpeg
 !apps/web/public/**/*.png
 !apps/web/public/**/*.jpg
+!docs/screenshots/*.png
 
 # Demo video working files — keep the final MP4, exclude the 17MB WebM + intermediates
 demo-video/assets/screencaps/*.webm

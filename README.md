@@ -18,7 +18,9 @@ Every product team has the same broken loop:
 
 **Atelier fixes the loop.** Every critique is a branch on an infinite canvas you can see, compare, and keep. Every suggestion is **grounded in real landing pages crawled from the open web** — so "make it premium" arrives as *"swap Inter for Cormorant Garamond 700 italic, use Aesop's #EDE5D8 parchment, ghost outlined CTA."*
 
-📽 **2-minute demo:** [`demo-video/atelier-demo.mp4`](demo-video/atelier-demo.mp4) (1920×1080 · 1:56 · 4.3 MB)
+📽 **2-minute demo:** [`demo-video/atelier-demo.mp4`](demo-video/atelier-demo.mp4) (1920×1080 · 1:56 · 4.3 MB · ElevenLabs narration)
+
+![Grounded Critics — the headline shot](docs/screenshots/grounded-critics-live.png)
 
 ---
 
@@ -253,12 +255,21 @@ To deploy:
 
 ---
 
+## Screenshots
+
+| | |
+|---|---|
+| ![Grounded critics](docs/screenshots/grounded-critics-live.png) | ![Canvas with two nodes](docs/screenshots/canvas-two-nodes.png) |
+| *Grounded Critics — Genspark pulls 3 live landing pages, Claude cites them with specific hex codes + typography* | *Canvas — every variant is a live-iframe node, edges show the prompt that spawned each child* |
+| ![Full-page side-by-side viewer](docs/screenshots/viewer-side-by-side.png) | ![Template picker](docs/screenshots/ux-fixes-new-project.png) |
+| *Full-page Side-by-Side viewer comparing the seed (Warm Minimal) to the grounded-critics luxury variant* | *Template picker with vibe chips (PREMIUM / BRUTALIST / CALM / FUTURISTIC) and guided hints* |
+
 ## Status (2026-04-24)
 
 - ✅ Feature-complete for submission (cycles 1–7)
 - ✅ Local stack: fork, media, merge, feedback, critics (with Genspark grounding), drag-to-combine, export, compare, checkpoint — all verified end-to-end
-- ✅ Render deploy: web + sandbox live; API suspended on free tier between testing — resume before submission
-- ✅ 2-minute Devfolio-ready demo video recorded locally (see [demo-video/final-plan.md](demo-video/final-plan.md))
+- ✅ Render deploy: web + sandbox + API all live. Frontend at [atelier-web.onrender.com](https://atelier-web.onrender.com), API at `atelier-api-wpx8.onrender.com`
+- ✅ 2-minute demo video with ElevenLabs narration (see [demo-video/final-plan.md](demo-video/final-plan.md))
 
 See [PLAN.md](PLAN.md) for the cycle-by-cycle build log and architectural decisions.
 

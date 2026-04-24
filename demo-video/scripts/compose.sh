@@ -14,18 +14,27 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FFMPEG="$ROOT/node_modules/ffmpeg-static/ffmpeg.exe"
-INPUT_WEBM="$ROOT/assets/screencaps/page@14786f09270c35b371b9e169ef2a69dd.webm"
-NARRATION="$ROOT/assets/voiceover.wav"
+# Pick the largest captured WebM (the main recording, not any short intermediate).
+INPUT_WEBM="$(ls -S "$ROOT/assets/screencaps/"*.webm 2>/dev/null | head -1)"
+# Prefer the ElevenLabs MP3 if narrate.mjs produced one; fall back to the
+# SAPI WAV from narrate-local.ps1 so compose works without cloud-TTS keys.
+if [ -f "$ROOT/assets/voiceover.mp3" ]; then
+  NARRATION="$ROOT/assets/voiceover.mp3"
+else
+  NARRATION="$ROOT/assets/voiceover.wav"
+fi
 OUT="$ROOT/atelier-demo.mp4"
 
-if [ ! -f "$INPUT_WEBM" ]; then
-  echo "[compose] missing $INPUT_WEBM — run scripts/capture.mjs first" >&2
+if [ -z "$INPUT_WEBM" ] || [ ! -f "$INPUT_WEBM" ]; then
+  echo "[compose] no WebM found in $ROOT/assets/screencaps/ — run scripts/capture.mjs first" >&2
   exit 1
 fi
 if [ ! -f "$NARRATION" ]; then
   echo "[compose] missing $NARRATION — run narrate.mjs (or narrate-local.ps1)" >&2
   exit 1
 fi
+echo "[compose] video: $INPUT_WEBM"
+echo "[compose] audio: $NARRATION"
 
 # Segment plan (WebM seconds -> output after setpts):
 #   1. intro              2.5-15     @ 1x   -> 12.5s   (landing, template, create, critics click)
