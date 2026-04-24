@@ -1530,3 +1530,22 @@ Replaces §21.16. Ordered strictly by what unlocks the submission (hosted URL + 
 - [demo-video/scripts/capture.mjs](demo-video/scripts/capture.mjs) — Playwright script that drives the live URL through all 8 story beats and records WebM
 - [demo-video/README.md](demo-video/README.md) — run order
 User still needs to actually execute `narrate.mjs` + `capture.mjs` + `hyperframes render` to produce the MP4; I prepped all the pieces but didn't run them per request.
+
+**Cycle 7 shipped (2026-04-24):** Genspark integration (sponsor showcase) + compare-UX overhaul.
+- **Grounded critics** — new [apps/api/atelier_api/providers/genspark.py](apps/api/atelier_api/providers/genspark.py) shells out to the `@genspark/cli` (`gsk` binary) for `web_search` + parallel `crawler`. `ground_theme(theme)` pulls 3 real landing pages matching the theme and returns their markdown to Claude as "REAL-WORLD REFERENCES". Critics now cite specific observed elements (fonts, hex codes like `#EDE5D8`/`#B89A5A`, layout patterns) instead of guessing. Verified live on the "Warm Minimal → Premium Luxury" test: Claude pulled from Aesop/Awwwards/Dribbble references, rewrote the hero to dark editorial brown + Cormorant italic serif + ghost outlined CTA.
+- **Feature flag** — `POST /nodes/{id}/critics/analyze` takes `use_grounding: bool`. Missing `GENSPARK_API_KEY` OR missing `gsk` binary → `genspark.is_available()` returns False → route silently falls back to Claude-only (UI shows a "Genspark returned no references" notice).
+- **Windows subprocess fix** — `asyncio.create_subprocess_exec` can't execute `gsk.CMD` (WinError 193). Switched to `asyncio.to_thread(subprocess.run)` which handles `.CMD` wrappers transparently.
+- **`batch_crawl_url_and_answer` is broken on the free plan** (returns "No content found or crawler failed" for every URL, including aesop.com and stripe.com). The `crawler` tool on the same URLs returns full markdown. Provider fans out N parallel `crawler` calls instead — simpler and reliable.
+- **Compare: discoverability fix** — every variant node's "Pin" button is now labeled **Compare** (Columns icon). Dynamic label reflects state: "Compare" → "A — pick B" (active, cyan filled) → "Compare ·B" (hinting). New TopBar cyan progress pill appears when A is picked but B isn't, with a Cancel button; becomes "Comparing X ↔ Y" with `Open split view` once both picked.
+- **BeforeAfterViewer rewrite** — default mode is **Side by side** (both pages scaled to fit the stage, nothing cropped) instead of the previous split-with-cropped-halves. Split (draggable divider) and Overlay kept as opt-in modes via top-bar toggle + `S`/`D`/`O` keyboard shortcuts. Viewports (Desktop/Tablet/Mobile) work across all modes.
+- **Deploy** — `render.yaml` buildCommand for `atelier-api` now runs `npm install -g @genspark/cli` after `pip install .` (with `|| echo` so build doesn't fail if Node isn't available). `GENSPARK_API_KEY` added to envVars — set via Render dashboard after resuming the service.
+
+### 26.7 Cycle 7 — unblock prod verify
+`atelier-api` is currently **suspended** in Render (`HTTP 503 Service Suspended`); latest push (`3b16025`) won't deploy until resumed. To ship Cycle 7 to prod:
+1. Resume `atelier-api` in the Render dashboard.
+2. Add `GENSPARK_API_KEY` env var on the `atelier-api` service.
+3. Trigger a manual redeploy so the new buildCommand installs `@genspark/cli`.
+4. Verify: `POST /api/v1/nodes/{id}/critics/analyze` with `{"use_grounding": true}` returns `"grounded": true` and a populated `references[]`.
+5. If `npm install -g @genspark/cli` fails in the build logs (no Node on the Render Python image), grounded critics still deploys but silently degrades — users see the "Genspark returned no references" notice.
+
+Verification is optional for the hackathon submission: the **demo video is being recorded locally** (faster, no cold-starts, same code path), and grounded critics is fully verified end-to-end on `localhost` with the real Genspark key.
