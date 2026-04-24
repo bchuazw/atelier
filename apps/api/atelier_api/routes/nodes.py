@@ -135,6 +135,56 @@ async def export_node(node_id: str, session: AsyncSession = Depends(get_session)
     }
 
 
+@router.get("/{node_id}/export/zip")
+async def export_node_zip(node_id: str, session: AsyncSession = Depends(get_session)):
+    """Bundle the entire variant tree (index.html + all assets) as a zip.
+
+    Returned as `application/zip` with Content-Disposition so the browser
+    downloads it. Useful when a variant references generated media (hero
+    images, etc.) and the user wants the complete package for Cursor /
+    their editor without grabbing each file separately.
+    """
+    import io
+    import zipfile
+
+    from fastapi.responses import StreamingResponse
+
+    node = await session.get(Node, node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found")
+    if node.build_status != "ready":
+        raise HTTPException(
+            status_code=400, detail=f"Node build_status={node.build_status!r}; can't export."
+        )
+    try:
+        node_dir = await _ensure_node_on_disk(node)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # Build zip in memory. Variants are small (HTML + 1 media file, typically
+    # < 2 MB), so holding in memory is fine.
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for p in sorted(node_dir.rglob("*")):
+            if not p.is_file():
+                continue
+            rel = p.relative_to(node_dir).as_posix()
+            zf.write(p, arcname=rel)
+    buf.seek(0)
+
+    safe_title = (node.title or "atelier-variant").replace('"', "").replace("/", "-")
+    safe_title = "".join(c if c.isalnum() or c in "-_ " else "" for c in safe_title)[:80].strip() or "atelier-variant"
+    filename = f"{safe_title}.zip"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
 @router.get("/{node_id}/ancestors")
 async def get_ancestors(node_id: str, session: AsyncSession = Depends(get_session)):
     """Return the branch path from root to the given node."""

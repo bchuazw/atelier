@@ -27,6 +27,7 @@
 | **Checkpoint** to archive old exploration | per-node Checkpoint button | Older siblings/ancestors hidden, restorable via TopBar |
 | **Project context** influences every LLM call | TopBar Context button | Saved per-project preferences flow into every prompt |
 | **Delete project** with Supabase cleanup | TopBar trash button | Cascades to `storage.delete_variant_tree` for every node |
+| **Export a variant** (HTML + assets + lineage) | per-node Export button → ExportDialog | Copy / Download `.html`, asset URLs, lineage breadcrumb. Backed by `GET /nodes/{id}/export` |
 
 **Hosted URLs:**
 - Frontend: https://atelier-web.onrender.com
@@ -1508,6 +1509,12 @@ Replaces §21.16. Ordered strictly by what unlocks the submission (hosted URL + 
 - **Error boundary** around the canvas.
 
 **Cycle 3 shipped (2026-04-24):** Drag-to-combine (Opus-powered merge) + MergeDialog + drag gesture + merge-edge animations + persistent PromptBar.
+
+**Cycle 5 shipped (2026-04-24):**
+- **Export** — every variant card has an `Export` button → `ExportDialog` with a code preview, one-click Copy HTML, Download `.html` button, per-media-asset public-URL list, lineage breadcrumb, and "open rendered in new tab". Backed by `GET /nodes/{id}/export` (rehydrates from Supabase if ephemeral disk wiped the local tree). Closes the loop for users who want to take the output to Cursor.
+- **Streaming apply** — Feedback + Critics "Apply" flows moved off blocking `/fork` onto `POST /nodes/{id}/fork/jobs` + SSE stream. Users now see a live two-step stepper during the 30-40s rewrite, with per-step elapsed-ms. `jobs.py` event bus reused across media + merge + fork.
+- **Live iframe template thumbnails** — each template card in the New Project dialog now shows a scaled live iframe of the actual HTML instead of just a tagline. Zero build step (reuses the VariantNode pattern).
+- **Video staging** — `demo-video/final-plan.md` consolidates the 2-minute plan (beats, voices, open decisions); `README.md` trimmed to a quick-reference. Scripts and scaffold unchanged.
 
 **Cycle 3.5 shipped (2026-04-24):**
 - **Light (whiteboard) theme** — every component swapped from dark to light; animations for node arrive, dialog entrance, merge glow.

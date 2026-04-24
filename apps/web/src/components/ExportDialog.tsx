@@ -85,6 +85,16 @@ export default function ExportDialog() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  function downloadZip() {
+    if (!exportNodeId) return;
+    const base =
+      (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/+$/, "") || "/api/v1";
+    // Use a regular anchor so the browser handles the Content-Disposition.
+    const a = document.createElement("a");
+    a.href = `${base}/nodes/${exportNodeId}/export/zip`;
+    a.click();
+  }
+
   return (
     <div className="fixed inset-0 z-50 bg-zinc-900/40 flex items-center justify-center p-4 atelier-dialog-backdrop">
       <div className="atelier-dialog-panel w-full max-w-3xl bg-stone-50 border border-zinc-200 rounded-xl shadow-2xl">
@@ -229,8 +239,17 @@ export default function ExportDialog() {
               disabled={!data}
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-white border border-zinc-300 hover:border-zinc-500 text-zinc-700 disabled:opacity-50"
             >
-              <Download className="w-4 h-4" /> Download .html
+              <Download className="w-4 h-4" /> .html
             </button>
+            {data && data.media_assets.length > 0 && (
+              <button
+                onClick={downloadZip}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-white border border-zinc-300 hover:border-zinc-500 text-zinc-700"
+                title="Download the full tree (HTML + media assets) as a zip"
+              >
+                <Download className="w-4 h-4" /> .zip ({data.media_assets.length + 1} files)
+              </button>
+            )}
             <button
               onClick={copyHtml}
               disabled={!data}

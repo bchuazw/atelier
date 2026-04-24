@@ -256,6 +256,17 @@ async def delete_project(project_id: str, session: AsyncSession = Depends(get_se
         ).all()
     ]
 
+    # Break the self-referencing parent_id chain so the project cascade
+    # (which deletes all nodes at once) doesn't hit a FK violation in
+    # environments where the Node.parent_id FK lacks ON DELETE CASCADE /
+    # SET NULL (older databases created before the model was fixed).
+    from sqlalchemy import update as sql_update
+
+    await session.execute(
+        sql_update(Node).where(Node.project_id == project_id).values(parent_id=None)
+    )
+    await session.flush()
+
     await session.delete(project)
     await session.commit()
 

@@ -38,7 +38,9 @@ class Node(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=uuid_str)
     project_id: Mapped[str] = mapped_column(ForeignKey("project.id", ondelete="CASCADE"), index=True)
-    parent_id: Mapped[str | None] = mapped_column(ForeignKey("node.id"), nullable=True, index=True)
+    parent_id: Mapped[str | None] = mapped_column(
+        ForeignKey("node.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     type: Mapped[str] = mapped_column(String, nullable=False)  # seed|variant|feedback|critic|pipeline|live|code
     title: Mapped[str | None] = mapped_column(String, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -14,7 +14,35 @@ const QUICK_CHIPS = [
 ];
 
 export default function PromptBar() {
-  const { project, nodes, selectedNodeId, includeArchived, preferredModel, setPreferredModel } = useUI();
+  const {
+    project,
+    nodes,
+    selectedNodeId,
+    includeArchived,
+    preferredModel,
+    setPreferredModel,
+    // A dialog is considered open whenever any modal state flag is true —
+    // hide the PromptBar behind them so keystrokes and clicks don't leak
+    // through, and the bottom UI doesn't overlap modal footers.
+    forkDialogOpen,
+    mediaDialogOpen,
+    mergeDialog,
+    feedbackDialogOpen,
+    criticsDialogOpen,
+    exportDialogOpen,
+    viewerOpen,
+    contextPanelOpen,
+  } = useUI();
+
+  const anyModalOpen =
+    forkDialogOpen ||
+    mediaDialogOpen ||
+    !!mergeDialog ||
+    feedbackDialogOpen ||
+    criticsDialogOpen ||
+    exportDialogOpen ||
+    viewerOpen ||
+    contextPanelOpen;
   const [prompt, setPrompt] = useState("");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +86,13 @@ export default function PromptBar() {
   }
 
   return (
-    <div className="absolute left-1/2 bottom-4 -translate-x-1/2 z-30 w-[min(720px,calc(100%-32px))]">
+    <div
+      className={clsx(
+        "absolute left-1/2 bottom-4 -translate-x-1/2 z-30 w-[min(720px,calc(100%-32px))] transition-opacity duration-150",
+        anyModalOpen && "opacity-0 pointer-events-none"
+      )}
+      aria-hidden={anyModalOpen}
+    >
       <div className="bg-stone-50/90 backdrop-blur border border-zinc-200 rounded-xl shadow-2xl overflow-hidden">
         <div className="flex items-center justify-between px-3 pt-2 pb-1.5 text-[11px] gap-2">
           <div className="flex items-center gap-1.5 text-zinc-500 min-w-0">
