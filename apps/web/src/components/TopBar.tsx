@@ -9,6 +9,8 @@ import {
   ArchiveRestore,
   MessageSquareQuote,
   Gem,
+  Columns,
+  X,
 } from "lucide-react";
 import clsx from "clsx";
 import { api } from "@/lib/api";
@@ -20,6 +22,8 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
     setTree,
     openViewer,
     compare,
+    setCompareA,
+    setCompareB,
     nodes,
     selectedNodeId,
     openContextPanel,
@@ -69,6 +73,8 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
   }
 
   const canCompare = compare.a && compare.b;
+  const compareNodeA = compare.a ? nodes.find((n) => n.id === compare.a) : null;
+  const compareNodeB = compare.b ? nodes.find((n) => n.id === compare.b) : null;
   const archivedCount = project?.archived_count ?? 0;
   const hasCheckpoint = !!project?.active_checkpoint_id;
 
@@ -155,6 +161,62 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
           </button>
         </div>
       </div>
+
+      {/* Compare-mode progress pill — appears as soon as one node is
+          pinned so the user knows the flow (click another Compare button).
+          Disappears once both slots are filled (the "Open Before/After"
+          CTA at the right of the top bar handles that state). */}
+      {project && compare.a && !compare.b && (
+        <div className="px-4 py-1.5 bg-cyan-50 border-b border-cyan-300 text-[12px] text-cyan-700 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Columns className="w-3.5 h-3.5" />
+            <span>
+              <span className="font-medium">Compare mode:</span> A ={" "}
+              <span className="font-medium">{compareNodeA?.title || "Untitled"}</span>.
+              Click <span className="font-medium">Compare</span> on another node to open split view.
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              setCompareA(null);
+              setCompareB(null);
+            }}
+            className="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-cyan-100 text-cyan-700 text-[11px]"
+          >
+            <X className="w-3 h-3" />
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {project && canCompare && (
+        <div className="px-4 py-1.5 bg-cyan-100 border-b border-cyan-300 text-[12px] text-cyan-700 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Columns className="w-3.5 h-3.5" />
+            <span>
+              Comparing <span className="font-medium">{compareNodeA?.title || "A"}</span> ↔{" "}
+              <span className="font-medium">{compareNodeB?.title || "B"}</span>
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={openViewer}
+              className="flex items-center gap-1 px-2 py-0.5 rounded bg-cyan-500 hover:bg-cyan-400 text-white text-[11px] font-medium"
+            >
+              Open split view
+            </button>
+            <button
+              onClick={() => {
+                setCompareA(null);
+                setCompareB(null);
+              }}
+              className="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-cyan-200 text-cyan-700 text-[11px]"
+            >
+              <X className="w-3 h-3" /> Clear
+            </button>
+          </div>
+        </div>
+      )}
 
       {project && hasCheckpoint && (
         <div className="px-4 py-1.5 bg-fuchsia-100 border-b border-fuchsia-300 text-[12px] text-fuchsia-700 flex items-center justify-between">

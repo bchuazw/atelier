@@ -7,12 +7,15 @@ import {
   ArrowRight,
   Check,
   AlertTriangle,
+  Globe,
+  ExternalLink,
 } from "lucide-react";
 import clsx from "clsx";
 import {
   api,
   subscribeToJob,
   type CriticItemDTO,
+  type CriticReferenceDTO,
   type ForkChildDTO,
   type ModelId,
 } from "@/lib/api";
@@ -65,11 +68,14 @@ export default function CriticsDialog() {
 
   const [theme, setTheme] = useState("");
   const [model, setModel] = useState<ModelId>(preferredModel);
+  const [useGrounding, setUseGrounding] = useState(false);
   const [stage, setStage] = useState<Stage>("compose");
   const [applyStage, setApplyStage] = useState<"rewriting" | "uploading" | "done">("rewriting");
   const [applyElapsed, setApplyElapsed] = useState<Record<string, number | undefined>>({});
   const [items, setItems] = useState<CriticItemDTO[]>([]);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [references, setReferences] = useState<CriticReferenceDTO[]>([]);
+  const [grounded, setGrounded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const target = useMemo(
@@ -81,11 +87,14 @@ export default function CriticsDialog() {
     if (!criticsDialogOpen) {
       setTheme("");
       setModel(preferredModel);
+      setUseGrounding(false);
       setStage("compose");
       setApplyStage("rewriting");
       setApplyElapsed({});
       setItems([]);
       setSelected({});
+      setReferences([]);
+      setGrounded(false);
       setError(null);
     }
   }, [criticsDialogOpen, preferredModel]);
@@ -97,8 +106,14 @@ export default function CriticsDialog() {
     setStage("analyzing");
     setError(null);
     try {
-      const resp = await api.criticsAnalyze(target.id, { theme: theme.trim(), model });
+      const resp = await api.criticsAnalyze(target.id, {
+        theme: theme.trim(),
+        model,
+        use_grounding: useGrounding,
+      });
       setItems(resp.critics);
+      setReferences(resp.references || []);
+      setGrounded(!!resp.grounded);
       // Preselect high + medium by default; low left unchecked
       const pre: Record<string, boolean> = {};
       resp.critics.forEach((it) => (pre[it.id] = it.severity !== "low"));
@@ -224,10 +239,42 @@ export default function CriticsDialog() {
                   </button>
                 ))}
               </div>
+
+              <label
+                className={clsx(
+                  "mt-3 flex items-start gap-2.5 px-3 py-2 rounded-lg border cursor-pointer transition",
+                  useGrounding
+                    ? "bg-sky-50 border-sky-300"
+                    : "bg-white border-zinc-200 hover:border-zinc-400"
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={useGrounding}
+                  onChange={(e) => setUseGrounding(e.target.checked)}
+                  className="mt-0.5 accent-sky-500"
+                  disabled={stage === "analyzing"}
+                />
+                <div className="flex-1">
+                  <div className="flex items-center gap-1.5 text-[12px] font-medium text-zinc-800">
+                    <Globe className="w-3.5 h-3.5 text-sky-600" />
+                    Ground with Genspark research
+                  </div>
+                  <div className="text-[11px] text-zinc-500 leading-snug mt-0.5">
+                    Pulls 3 real landing pages matching the theme + asks Claude
+                    to reference specific observed elements. Adds ~10–20s.
+                  </div>
+                </div>
+              </label>
+
               {stage === "analyzing" && (
                 <div className="flex items-center gap-2 text-[12px] text-emerald-700 mt-3">
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>{{ haiku: "Haiku", sonnet: "Sonnet", opus: "Opus" }[model]} is reviewing against "{theme}"…</span>
+                  <span>
+                    {useGrounding
+                      ? `Genspark fetching references → ${{ haiku: "Haiku", sonnet: "Sonnet", opus: "Opus" }[model]} critiquing against "${theme}"…`
+                      : `${{ haiku: "Haiku", sonnet: "Sonnet", opus: "Opus" }[model]} is reviewing against "${theme}"…`}
+                  </span>
                 </div>
               )}
             </>
@@ -236,6 +283,36 @@ export default function CriticsDialog() {
               <div className="text-[11px] text-zinc-500">
                 {items.length} critic suggestion{items.length === 1 ? "" : "s"} for "{theme}". High/medium are preselected.
               </div>
+              {grounded && references.length > 0 && (
+                <div className="rounded-lg border border-sky-200 bg-sky-50/70 p-2.5">
+                  <div className="text-[10px] uppercase tracking-wider text-sky-700 font-medium mb-1 flex items-center gap-1">
+                    <Globe className="w-3 h-3" />
+                    Grounded in {references.length} reference{references.length === 1 ? "" : "s"} via Genspark
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {references.map((r) => (
+                      <a
+                        key={r.url}
+                        href={r.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-white border border-sky-200 text-sky-700 hover:border-sky-400"
+                        title={r.url}
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        <span className="truncate max-w-[180px]">{r.title}</span>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {useGrounding && !grounded && (
+                <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-2.5 text-[11px] text-zinc-500">
+                  Grounding was requested, but Genspark returned no references
+                  (key missing, rate-limited, or no matches). Suggestions below are
+                  Claude's own reasoning.
+                </div>
+              )}
               {items.map((it) => (
                 <label
                   key={it.id}

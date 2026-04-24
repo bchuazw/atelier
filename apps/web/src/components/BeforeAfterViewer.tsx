@@ -1,5 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { X, Monitor, Tablet, Smartphone, FlipHorizontal } from "lucide-react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  X,
+  Monitor,
+  Tablet,
+  Smartphone,
+  Columns,
+  Layers,
+  SplitSquareHorizontal,
+} from "lucide-react";
 import clsx from "clsx";
 import { useUI } from "@/lib/store";
 
@@ -10,13 +18,22 @@ const VIEWPORT_WIDTH: Record<Viewport, number> = {
   mobile: 390,
 };
 
+// Each iframe renders its page at the chosen viewport width + this height
+// (most landing pages fit in 2000px; we give headroom and let users scroll
+// inside the iframe if needed).
+const IFRAME_HEIGHT = 2000;
+
+type Mode = "side" | "split" | "overlay";
+
 export default function BeforeAfterViewer() {
   const { nodes, compare, viewerOpen, closeViewer, setCompareA, setCompareB } = useUI();
-  const [divider, setDivider] = useState(50); // 0–100 %
+  const [divider, setDivider] = useState(50); // only used in split mode
   const [viewport, setViewport] = useState<Viewport>("desktop");
-  const [overlayMode, setOverlayMode] = useState(false);
+  const [mode, setMode] = useState<Mode>("side");
   const [spaceHeld, setSpaceHeld] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const [stageSize, setStageSize] = useState({ w: 1200, h: 800 });
 
   const nodeA = useMemo(() => nodes.find((n) => n.id === compare.a), [nodes, compare.a]);
   const nodeB = useMemo(() => nodes.find((n) => n.id === compare.b), [nodes, compare.b]);
@@ -32,7 +49,10 @@ export default function BeforeAfterViewer() {
       if (e.key === "1") setViewport("desktop");
       if (e.key === "2") setViewport("tablet");
       if (e.key === "3") setViewport("mobile");
-      if (e.key.toLowerCase() === "o") setOverlayMode((v) => !v);
+      const k = e.key.toLowerCase();
+      if (k === "s") setMode("side");
+      if (k === "d") setMode("split"); // D for divider
+      if (k === "o") setMode("overlay");
     };
     const up = (e: KeyboardEvent) => {
       if (e.key === " ") setSpaceHeld(false);
@@ -44,6 +64,18 @@ export default function BeforeAfterViewer() {
       window.removeEventListener("keyup", up);
     };
   }, [viewerOpen, spaceHeld, closeViewer]);
+
+  useLayoutEffect(() => {
+    if (!viewerOpen) return;
+    const el = stageRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      setStageSize({ w: el.clientWidth, h: el.clientHeight });
+    });
+    ro.observe(el);
+    setStageSize({ w: el.clientWidth, h: el.clientHeight });
+    return () => ro.disconnect();
+  }, [viewerOpen]);
 
   if (!viewerOpen) return null;
 
@@ -67,6 +99,28 @@ export default function BeforeAfterViewer() {
 
   const widthPx = VIEWPORT_WIDTH[viewport];
 
+  // Compute the scale for side-by-side: we want both pages to fit the stage
+  // without cropping, with a small gap between them. Height is also bounded
+  // so the iframe's rendered height doesn't exceed the stage.
+  const GAP_PX = 24;
+  const PAD_PX = 32;
+  const availableW = Math.max(200, stageSize.w - PAD_PX);
+  const availableH = Math.max(300, stageSize.h - PAD_PX);
+  const sideScale = Math.min(
+    (availableW - GAP_PX) / 2 / widthPx,
+    availableH / IFRAME_HEIGHT,
+    1
+  );
+  const scaledW = Math.round(widthPx * sideScale);
+  const scaledH = Math.round(IFRAME_HEIGHT * sideScale);
+
+  // For split / overlay modes we use a single centered panel. Its height
+  // is capped at 900px or the available stage height, whichever is smaller.
+  const panelW = widthPx;
+  const panelH = Math.min(900, availableH);
+
+  const COMMON_IFRAME_SANDBOX = "allow-scripts allow-same-origin allow-forms allow-pointer-lock";
+
   return (
     <div className="fixed inset-0 z-40 bg-black/80 flex flex-col">
       {/* Top bar */}
@@ -78,10 +132,10 @@ export default function BeforeAfterViewer() {
           >
             <X className="w-4 h-4" /> Close
           </button>
-          <span className="text-zinc-400">|</span>
+          <span className="text-zinc-300">|</span>
           <div className="flex items-center gap-2">
-            <span className="text-cyan-300 font-medium">A:</span>
-            <span className="text-zinc-800">{nodeA?.title || "none"}</span>
+            <span className="text-cyan-600 font-medium">A:</span>
+            <span className="text-zinc-800 truncate max-w-[200px]">{nodeA?.title || "none"}</span>
             <button
               className="text-[10px] text-zinc-500 hover:text-zinc-700"
               onClick={() => setCompareA(null)}
@@ -90,8 +144,8 @@ export default function BeforeAfterViewer() {
             </button>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-cyan-300 font-medium">B:</span>
-            <span className="text-zinc-800">{nodeB?.title || "none"}</span>
+            <span className="text-cyan-600 font-medium">B:</span>
+            <span className="text-zinc-800 truncate max-w-[200px]">{nodeB?.title || "none"}</span>
             <button
               className="text-[10px] text-zinc-500 hover:text-zinc-700"
               onClick={() => setCompareB(null)}
@@ -101,44 +155,152 @@ export default function BeforeAfterViewer() {
           </div>
         </div>
 
-        <div className="flex items-center gap-1">
-          <VPButton active={viewport === "desktop"} onClick={() => setViewport("desktop")}>
+        <div className="flex items-center gap-2">
+          {/* Mode toggle */}
+          <div className="flex items-center gap-0.5 bg-zinc-100 rounded-md p-0.5">
+            <ModeButton
+              active={mode === "side"}
+              onClick={() => setMode("side")}
+              title="Side by side — both pages full, scaled to fit (S)"
+            >
+              <Columns className="w-4 h-4" />
+              <span className="text-[11px] font-medium">Side by side</span>
+            </ModeButton>
+            <ModeButton
+              active={mode === "split"}
+              onClick={() => setMode("split")}
+              title="Split with draggable divider — pixel-align two renders (D)"
+            >
+              <SplitSquareHorizontal className="w-4 h-4" />
+              <span className="text-[11px] font-medium">Split</span>
+            </ModeButton>
+            <ModeButton
+              active={mode === "overlay"}
+              onClick={() => setMode("overlay")}
+              title="Overlay — B fades over A (O)"
+            >
+              <Layers className="w-4 h-4" />
+              <span className="text-[11px] font-medium">Overlay</span>
+            </ModeButton>
+          </div>
+
+          <span className="text-zinc-300">|</span>
+
+          {/* Viewport toggle */}
+          <VPButton active={viewport === "desktop"} onClick={() => setViewport("desktop")} title="Desktop (1)">
             <Monitor className="w-4 h-4" />
           </VPButton>
-          <VPButton active={viewport === "tablet"} onClick={() => setViewport("tablet")}>
+          <VPButton active={viewport === "tablet"} onClick={() => setViewport("tablet")} title="Tablet (2)">
             <Tablet className="w-4 h-4" />
           </VPButton>
-          <VPButton active={viewport === "mobile"} onClick={() => setViewport("mobile")}>
+          <VPButton active={viewport === "mobile"} onClick={() => setViewport("mobile")} title="Mobile (3)">
             <Smartphone className="w-4 h-4" />
-          </VPButton>
-          <div className="w-2" />
-          <VPButton active={overlayMode} onClick={() => setOverlayMode((v) => !v)} title="Toggle overlay mode (O)">
-            <FlipHorizontal className="w-4 h-4" />
           </VPButton>
         </div>
       </div>
 
-      {/* Viewport */}
-      <div className="flex-1 flex items-center justify-center overflow-auto bg-white p-4">
-        <div
-          ref={containerRef}
-          className="relative bg-stone-50 shadow-2xl"
-          style={{ width: widthPx, height: "min(900px, calc(100vh - 120px))" }}
-        >
-          {spaceHeld ? (
-            // Fullscreen single-panel flip mode: hold Space to see only A (release to compare)
-            <iframe
-              src={nodeA?.sandbox_url || "about:blank"}
-              className="absolute inset-0 w-full h-full bg-white"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock"
-              title="A"
+      {/* Stage */}
+      <div ref={stageRef} className="flex-1 overflow-auto bg-zinc-100">
+        {mode === "side" && (
+          <div className="min-h-full flex items-start justify-center p-4 gap-6">
+            <PagePanel
+              label="A"
+              title={nodeA?.title || "none"}
+              src={nodeA?.sandbox_url}
+              widthPx={widthPx}
+              heightPx={IFRAME_HEIGHT}
+              scale={sideScale}
+              scaledW={scaledW}
+              scaledH={scaledH}
+              sandbox={COMMON_IFRAME_SANDBOX}
             />
-          ) : overlayMode ? (
-            <>
+            <PagePanel
+              label="B"
+              title={nodeB?.title || "none"}
+              src={nodeB?.sandbox_url}
+              widthPx={widthPx}
+              heightPx={IFRAME_HEIGHT}
+              scale={sideScale}
+              scaledW={scaledW}
+              scaledH={scaledH}
+              sandbox={COMMON_IFRAME_SANDBOX}
+            />
+          </div>
+        )}
+
+        {mode === "split" && (
+          <div className="min-h-full flex items-center justify-center p-4">
+            <div
+              ref={containerRef}
+              className="relative bg-white shadow-2xl"
+              style={{ width: panelW, height: panelH }}
+            >
+              {spaceHeld ? (
+                <iframe
+                  src={nodeA?.sandbox_url || "about:blank"}
+                  className="absolute inset-0 w-full h-full bg-white"
+                  sandbox={COMMON_IFRAME_SANDBOX}
+                  title="A"
+                />
+              ) : (
+                <>
+                  <div
+                    className="absolute top-0 left-0 h-full overflow-hidden border-r border-zinc-200"
+                    style={{ width: `${divider}%` }}
+                  >
+                    <iframe
+                      src={nodeA?.sandbox_url || "about:blank"}
+                      className="bg-white"
+                      style={{ width: `${panelW}px`, height: "100%" }}
+                      sandbox={COMMON_IFRAME_SANDBOX}
+                      title="A"
+                    />
+                  </div>
+                  <div
+                    className="absolute top-0 right-0 h-full overflow-hidden"
+                    style={{ width: `${100 - divider}%` }}
+                  >
+                    <iframe
+                      src={nodeB?.sandbox_url || "about:blank"}
+                      className="bg-white"
+                      style={{
+                        width: `${panelW}px`,
+                        height: "100%",
+                        marginLeft: `-${(divider / 100) * panelW}px`,
+                      }}
+                      sandbox={COMMON_IFRAME_SANDBOX}
+                      title="B"
+                    />
+                  </div>
+                </>
+              )}
+
+              {!spaceHeld && (
+                <div
+                  className="absolute top-0 bottom-0 w-1 bg-cyan-400/80 hover:bg-cyan-300 cursor-ew-resize z-10"
+                  style={{ left: `calc(${divider}% - 2px)` }}
+                  onMouseDown={onDividerDrag}
+                >
+                  <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 left-1/2 w-6 h-12 rounded-full bg-cyan-500 text-white flex items-center justify-center shadow-lg font-bold">
+                    ⋮⋮
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {mode === "overlay" && (
+          <div className="min-h-full flex items-center justify-center p-4">
+            <div
+              ref={containerRef}
+              className="relative bg-white shadow-2xl"
+              style={{ width: panelW, height: panelH }}
+            >
               <iframe
                 src={nodeA?.sandbox_url || "about:blank"}
                 className="absolute inset-0 w-full h-full bg-white"
-                sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock"
+                sandbox={COMMON_IFRAME_SANDBOX}
                 title="A-under"
               />
               <div
@@ -148,72 +310,133 @@ export default function BeforeAfterViewer() {
                 <iframe
                   src={nodeB?.sandbox_url || "about:blank"}
                   className="bg-white"
-                  style={{ width: `${widthPx}px`, height: "100%" }}
-                  sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock"
+                  style={{ width: `${panelW}px`, height: "100%" }}
+                  sandbox={COMMON_IFRAME_SANDBOX}
                   title="B-over"
                 />
               </div>
-            </>
-          ) : (
-            <>
               <div
-                className="absolute top-0 left-0 h-full overflow-hidden border-r border-zinc-200"
-                style={{ width: `${divider}%` }}
+                className="absolute top-0 bottom-0 w-1 bg-cyan-400/80 hover:bg-cyan-300 cursor-ew-resize z-10"
+                style={{ left: `calc(${divider}% - 2px)` }}
+                onMouseDown={onDividerDrag}
               >
-                <iframe
-                  src={nodeA?.sandbox_url || "about:blank"}
-                  className="bg-white"
-                  style={{ width: `${widthPx}px`, height: "100%" }}
-                  sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock"
-                  title="A"
-                />
-              </div>
-              <div
-                className="absolute top-0 right-0 h-full overflow-hidden"
-                style={{ width: `${100 - divider}%` }}
-              >
-                <iframe
-                  src={nodeB?.sandbox_url || "about:blank"}
-                  className="bg-white"
-                  style={{
-                    width: `${widthPx}px`,
-                    height: "100%",
-                    marginLeft: `-${(divider / 100) * widthPx}px`,
-                  }}
-                  sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock"
-                  title="B"
-                />
-              </div>
-            </>
-          )}
-
-          {/* Divider handle */}
-          {!spaceHeld && (
-            <div
-              className="absolute top-0 bottom-0 w-1 bg-amber-400/80 hover:bg-amber-300 cursor-ew-resize z-10"
-              style={{ left: `calc(${divider}% - 2px)` }}
-              onMouseDown={onDividerDrag}
-            >
-              <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 left-1/2 w-6 h-12 rounded-full bg-amber-400 text-black flex items-center justify-center shadow-lg">
-                ⋮⋮
+                <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 left-1/2 w-6 h-12 rounded-full bg-cyan-500 text-white flex items-center justify-center shadow-lg font-bold">
+                  ⋮⋮
+                </div>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Bottom status */}
       <div className="px-4 py-1.5 bg-stone-50 border-t border-zinc-200 text-[11px] text-zinc-500 flex items-center justify-between">
         <div>
-          Hold <kbd className="px-1 bg-zinc-100 rounded">Space</kbd> to flip A fullscreen.
-          Press <kbd className="px-1 bg-zinc-100 rounded">O</kbd> for overlay mode.
-          Press <kbd className="px-1 bg-zinc-100 rounded">1/2/3</kbd> for viewports.
+          {mode === "side" && (
+            <>
+              Both pages scaled to fit. Press <kbd className="px-1 bg-zinc-100 rounded">D</kbd> for split, <kbd className="px-1 bg-zinc-100 rounded">O</kbd> for overlay.
+            </>
+          )}
+          {mode === "split" && (
+            <>
+              Drag the divider to compare. Hold <kbd className="px-1 bg-zinc-100 rounded">Space</kbd> to flip A fullscreen. Press <kbd className="px-1 bg-zinc-100 rounded">S</kbd> for side-by-side.
+            </>
+          )}
+          {mode === "overlay" && (
+            <>
+              Drag the divider to reveal A under B. Press <kbd className="px-1 bg-zinc-100 rounded">S</kbd> for side-by-side.
+            </>
+          )}{" "}
+          <kbd className="px-1 bg-zinc-100 rounded">1/2/3</kbd> for viewports.
         </div>
-        <div>
-          {widthPx}px — divider {Math.round(divider)}%
+        <div className="font-mono">
+          {viewport} · {widthPx}px
+          {mode === "side" && <> · scale {(sideScale * 100).toFixed(0)}%</>}
+          {(mode === "split" || mode === "overlay") && <> · divider {Math.round(divider)}%</>}
         </div>
       </div>
     </div>
+  );
+}
+
+function PagePanel({
+  label,
+  title,
+  src,
+  widthPx,
+  heightPx,
+  scale,
+  scaledW,
+  scaledH,
+  sandbox,
+}: {
+  label: "A" | "B";
+  title: string;
+  src: string | null | undefined;
+  widthPx: number;
+  heightPx: number;
+  scale: number;
+  scaledW: number;
+  scaledH: number;
+  sandbox: string;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-2 flex-shrink-0">
+      <div className="flex items-center gap-2 text-[12px]">
+        <span
+          className={clsx(
+            "inline-flex items-center justify-center w-5 h-5 rounded-full text-white font-bold text-[10px]",
+            "bg-cyan-500"
+          )}
+        >
+          {label}
+        </span>
+        <span className="text-zinc-800 font-medium truncate max-w-[300px]">{title}</span>
+      </div>
+      <div
+        className="bg-white shadow-2xl overflow-hidden border border-zinc-200"
+        style={{ width: scaledW, height: scaledH }}
+      >
+        <iframe
+          src={src || "about:blank"}
+          sandbox={sandbox}
+          title={label}
+          style={{
+            width: `${widthPx}px`,
+            height: `${heightPx}px`,
+            transform: `scale(${scale})`,
+            transformOrigin: "top left",
+            border: 0,
+            background: "white",
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ModeButton({
+  children,
+  active,
+  onClick,
+  title,
+}: {
+  children: React.ReactNode;
+  active: boolean;
+  onClick: () => void;
+  title: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className={clsx(
+        "flex items-center gap-1 px-2 py-1 rounded transition",
+        active ? "bg-white text-cyan-700 shadow-sm" : "text-zinc-500 hover:text-zinc-800"
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -234,7 +457,7 @@ function VPButton({
       title={title}
       className={clsx(
         "p-1.5 rounded",
-        active ? "bg-amber-500 text-black" : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
+        active ? "bg-cyan-500 text-white" : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
       )}
     >
       {children}

@@ -15,7 +15,13 @@ services:
     plan: free
     region: oregon
     rootDir: apps/api
-    buildCommand: pip install .
+    # Install the Python deps, then try to install the Genspark CLI so the
+    # grounded-critics feature works in prod. If `npm install -g` fails
+    # (e.g. if Render's Python image ever drops bundled Node), grounded
+    # critics gracefully degrades to Claude-only — see providers/genspark.py.
+    buildCommand: |
+      pip install .
+      npm install -g @genspark/cli || echo "[build] @genspark/cli install failed — grounded critics will be disabled at runtime"
     startCommand: uvicorn atelier_api.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /healthz
     autoDeploy: true
@@ -28,6 +34,8 @@ services:
         sync: false
       - key: MINIMAX_API_KEY
         sync: false                # leave empty to keep mock-mode in prod
+      - key: GENSPARK_API_KEY
+        sync: false                # Genspark sponsor key — grounded critics uses this
       - key: ATELIER_DB_URL
         sync: false                # postgresql+asyncpg://postgres:<pwd>@db.<proj>.supabase.co:5432/postgres
       - key: SUPABASE_URL

@@ -3,7 +3,15 @@ import clsx from "clsx";
 import type { NodeDTO } from "@/lib/api";
 import { api } from "@/lib/api";
 import { useUI } from "@/lib/store";
-import { GitFork, Eye, Flag, CircleDot, Anchor, Wand2, Download } from "lucide-react";
+import {
+  GitFork,
+  Eye,
+  CircleDot,
+  Anchor,
+  Wand2,
+  Download,
+  Columns,
+} from "lucide-react";
 
 export type VariantNodeData = {
   node: NodeDTO;
@@ -144,18 +152,47 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
           <button
             onClick={(e) => {
               e.stopPropagation();
-              if (!compare.a) setCompareA(node.id);
-              else if (!compare.b && compare.a !== node.id) {
+              // Click 1: this node becomes A. Click 2 (on a different node):
+              // that becomes B and the split viewer opens. Click again on
+              // either selected node: reset and start over from this one.
+              if (isA || isB) {
+                setCompareA(node.id);
+                setCompareB(null);
+              } else if (!compare.a) {
+                setCompareA(node.id);
+              } else if (!compare.b) {
                 setCompareB(node.id);
                 openViewer();
               } else {
-                setCompareA(node.id);
-                setCompareB(null);
+                // Both slots full — swap B for this node and re-open the viewer.
+                setCompareB(node.id);
+                openViewer();
               }
             }}
-            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-cyan-600/20 hover:bg-cyan-600/40 text-cyan-700"
+            title={
+              isA
+                ? "Pinned as A — click another node to open split compare"
+                : isB
+                ? "Pinned as B — click another node to re-pin"
+                : !compare.a
+                ? "Step 1 of compare: pin as A"
+                : "Step 2 of compare: pin as B and open split viewer"
+            }
+            className={clsx(
+              "flex items-center gap-1 text-[11px] px-2 py-1 rounded",
+              isA || isB
+                ? "bg-cyan-500 text-white"
+                : "bg-cyan-100 hover:bg-cyan-200 text-cyan-700"
+            )}
           >
-            <Flag className="w-3 h-3" /> Pin
+            <Columns className="w-3 h-3" />
+            {isA
+              ? "A — pick B"
+              : isB
+              ? "B — pick A"
+              : compare.a
+              ? "Compare ·B"
+              : "Compare"}
           </button>
           <button
             onClick={setAsCheckpoint}

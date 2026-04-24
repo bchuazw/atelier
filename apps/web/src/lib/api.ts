@@ -138,10 +138,17 @@ export type CriticItemDTO = {
   severity: "low" | "medium" | "high";
 };
 
+export type CriticReferenceDTO = {
+  url: string;
+  title: string;
+};
+
 export type CriticsAnalyzeDTO = {
   critics: CriticItemDTO[];
   model_used: string;
   token_usage: Record<string, number>;
+  grounded?: boolean;
+  references?: CriticReferenceDTO[];
 };
 
 export type TemplateManifestEntry = {
@@ -252,7 +259,7 @@ export const api = {
     }),
   criticsAnalyze: (
     nodeId: string,
-    body: { theme: string; aspects?: string[]; model?: ModelId }
+    body: { theme: string; aspects?: string[]; model?: ModelId; use_grounding?: boolean }
   ) =>
     request<CriticsAnalyzeDTO>(`/nodes/${nodeId}/critics/analyze`, {
       method: "POST",

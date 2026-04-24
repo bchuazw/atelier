@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from atelier_api.db.models import Node, Project
 from atelier_api.db.session import get_session
 from atelier_api.providers import claude as claude_provider
+from atelier_api.providers import genspark as genspark_provider
 from atelier_api.routes.media import _ensure_parent_materialized
 
 log = logging.getLogger(__name__)
@@ -71,6 +72,16 @@ class CriticsAnalyzeIn(BaseModel):
     theme: str = Field(..., min_length=2, max_length=300)
     aspects: list[str] | None = None
     model: str = "sonnet"
+    # When true, the backend asks Genspark to pull 3 real landing-page
+    # examples of the theme and extract theme-specific details, which are
+    # then passed to Claude as grounding context. Results include a
+    # `references` list the UI can render as citations.
+    use_grounding: bool = False
+
+
+class CriticReference(BaseModel):
+    url: str
+    title: str
 
 
 class CriticItem(BaseModel):
@@ -85,6 +96,8 @@ class CriticsAnalyzeOut(BaseModel):
     critics: list[CriticItem]
     model_used: str
     token_usage: dict
+    grounded: bool = False
+    references: list[CriticReference] = []
 
 
 def _parse_critics(text: str) -> list[dict]:
@@ -154,10 +167,49 @@ async def analyze_critics(
         else ""
     )
 
+    # Optional: ground the critique in 3 real landing pages for the theme,
+    # pulled via Genspark (web_search + parallel crawler). Claude then extracts
+    # theme-relevant signals from the markdown. If Genspark is unavailable
+    # (key missing, CLI missing, or every crawl returns empty) we quietly
+    # fall through — the critics still work, just without citations.
+    grounding_block = ""
+    references: list[CriticReference] = []
+    grounded = False
+    if body.use_grounding and genspark_provider.is_available():
+        try:
+            grounding = await genspark_provider.ground_theme(
+                body.theme.strip(), max_sites=3, chars_per_site=3500
+            )
+        except Exception as e:  # defensive — never break critics on grounding failure
+            log.warning("[critics] grounding failed: %s: %s", type(e).__name__, e, exc_info=True)
+            grounding = {"theme": body.theme, "sites": []}
+
+        sites = grounding.get("sites") or []
+        if sites:
+            grounded = True
+            references = [
+                CriticReference(url=s["url"], title=s.get("title") or s["url"])
+                for s in sites
+            ]
+            lines: list[str] = [
+                "REAL-WORLD REFERENCES (Genspark-crawled landing pages matching the "
+                "theme — read them for typography, palette, layout, copy tone, and "
+                "visual language cues. Cite specific elements you observed when you "
+                "make a suggestion, e.g. \"Aesop's muted olive on cream — try "
+                "#D4D3B8 over #F4F1EA\"):",
+            ]
+            for i, s in enumerate(sites, start=1):
+                lines.append(f"\n[{i}] {s.get('title') or s['url']} — {s['url']}")
+                md = (s.get("markdown") or "").strip()
+                if md:
+                    lines.append(md)
+            grounding_block = "\n".join(lines) + "\n\n"
+
     user_msg = (
         f"{context_block}"
         f"TARGET THEME: {body.theme.strip()}\n\n"
         f"{aspects_block}"
+        f"{grounding_block}"
         f"CURRENT HTML (truncated if long):\n```html\n{html[:30000]}\n```\n\n"
         "Return the JSON array of suggestions now."
     )
@@ -173,4 +225,6 @@ async def analyze_critics(
         critics=[CriticItem(**it) for it in items],
         model_used=resp.model,
         token_usage=resp.usage_dict,
+        grounded=grounded,
+        references=references,
     )
