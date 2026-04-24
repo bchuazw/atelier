@@ -6,6 +6,18 @@ type CompareSelection = {
   b: string | null;
 };
 
+type MergeDrag = {
+  source_id: string;
+  hover_target_id: string | null;
+  original_x: number;
+  original_y: number;
+};
+
+type MergeDialogState = {
+  source_id: string;
+  target_id: string;
+};
+
 type UIState = {
   project: ProjectDTO | null;
   nodes: NodeDTO[];
@@ -17,6 +29,9 @@ type UIState = {
   forkParentId: string | null;
   mediaDialogOpen: boolean;
   mediaParentId: string | null;
+  mergeDrag: MergeDrag | null;
+  mergeDialog: MergeDialogState | null;
+  recentlyMergedId: string | null;
   contextPanelOpen: boolean;
   includeArchived: boolean;
   busy: boolean;
@@ -29,6 +44,12 @@ type UIState = {
   closeFork: () => void;
   openMedia: (parentId: string) => void;
   closeMedia: () => void;
+  beginMergeDrag: (source_id: string, original_x: number, original_y: number) => void;
+  setMergeHover: (target_id: string | null) => void;
+  endMergeDrag: () => void;
+  openMergeDialog: (source_id: string, target_id: string) => void;
+  closeMergeDialog: () => void;
+  markRecentlyMerged: (id: string | null) => void;
   setCompareA: (id: string | null) => void;
   setCompareB: (id: string | null) => void;
   openViewer: () => void;
@@ -52,6 +73,9 @@ export const useUI = create<UIState>((set) => ({
   forkParentId: null,
   mediaDialogOpen: false,
   mediaParentId: null,
+  mergeDrag: null,
+  mergeDialog: null,
+  recentlyMergedId: null,
   contextPanelOpen: false,
   includeArchived: false,
   busy: false,
@@ -63,6 +87,15 @@ export const useUI = create<UIState>((set) => ({
   closeFork: () => set({ forkDialogOpen: false, forkParentId: null }),
   openMedia: (parentId) => set({ mediaDialogOpen: true, mediaParentId: parentId }),
   closeMedia: () => set({ mediaDialogOpen: false, mediaParentId: null }),
+  beginMergeDrag: (source_id, original_x, original_y) =>
+    set({ mergeDrag: { source_id, hover_target_id: null, original_x, original_y } }),
+  setMergeHover: (target_id) =>
+    set((s) => (s.mergeDrag ? { mergeDrag: { ...s.mergeDrag, hover_target_id: target_id } } : {})),
+  endMergeDrag: () => set({ mergeDrag: null }),
+  openMergeDialog: (source_id, target_id) =>
+    set({ mergeDialog: { source_id, target_id } }),
+  closeMergeDialog: () => set({ mergeDialog: null }),
+  markRecentlyMerged: (id) => set({ recentlyMergedId: id }),
   setCompareA: (id) => set((s) => ({ compare: { ...s.compare, a: id } })),
   setCompareB: (id) => set((s) => ({ compare: { ...s.compare, b: id } })),
   openViewer: () => set({ viewerOpen: true }),

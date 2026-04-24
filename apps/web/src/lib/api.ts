@@ -89,6 +89,32 @@ export type MediaEventType =
 
 export type MediaEvent = { type: MediaEventType; ts: number; data: Record<string, any> };
 
+export type MergeChildDTO = {
+  node_id: string;
+  primary_edge_id: string;
+  contribution_edge_id: string;
+  title: string | null;
+  summary: string | null;
+  build_status: string;
+  sandbox_url: string | null;
+  model_used: string;
+  token_usage: Record<string, unknown>;
+};
+
+export type MergeEventType =
+  | "job-started"
+  | "merging"
+  | "merged"
+  | "uploading"
+  | "uploaded"
+  | "node-ready"
+  | "error"
+  | "done";
+
+export type MergeEvent = { type: MergeEventType; ts: number; data: Record<string, any> };
+
+export type StyleAspect = "typography" | "palette" | "layout" | "copy" | "all";
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -167,6 +193,17 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  // Merge: take two variants and synthesize a new one. `target_id` is the
+  // base (non-listed aspects preserved); `source_id` contributes the listed
+  // aspects. Default model = opus.
+  enqueueMergeJob: (
+    targetId: string,
+    body: { source_id: string; aspects: StyleAspect[]; model?: string; user_note?: string }
+  ) =>
+    request<MediaJobDTO>(`/nodes/${targetId}/merge/jobs`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   patchNode: (nodeId: string, body: Partial<{ position_x: number; position_y: number; title: string }>) =>
     request<{ ok: boolean }>(`/nodes/${nodeId}`, {
       method: "PATCH",
@@ -186,11 +223,57 @@ export const api = {
 };
 
 /**
- * Subscribe to a media-job SSE stream.
+ * Subscribe to an SSE job stream. Generic over event payload type;
+ * MediaEvent and MergeEvent are the two concrete shapes.
  * Returns a cleanup function that closes the EventSource.
- * Calls `onEvent` for every event (including `done`); `onFinal` fires once
- * when the stream ends (either `done` or connection closed).
  */
+export function subscribeToJob<TChild = MediaChildDTO>(
+  streamUrl: string,
+  onEvent: (ev: { type: string; ts: number; data: any }) => void,
+  onFinal?: (result: { ok: boolean; child?: TChild; error?: string }) => void
+): () => void {
+  const absolute =
+    streamUrl.startsWith("http") || !import.meta.env.VITE_API_BASE
+      ? streamUrl
+      : new URL(streamUrl, import.meta.env.VITE_API_BASE).toString();
+
+  const es = new EventSource(absolute);
+  let finalResult: { ok: boolean; child?: TChild; error?: string } = { ok: false };
+  let finalized = false;
+
+  es.onmessage = (raw) => {
+    try {
+      const ev = JSON.parse(raw.data);
+      onEvent(ev);
+      if (ev.type === "node-ready") {
+        finalResult = { ok: true, child: ev.data as TChild };
+      } else if (ev.type === "error") {
+        finalResult = { ok: false, error: ev.data?.message ?? "unknown error" };
+      } else if (ev.type === "done") {
+        finalized = true;
+        es.close();
+        onFinal?.(finalResult);
+      }
+    } catch (err) {
+      console.error("SSE parse error", err, raw.data);
+    }
+  };
+  es.onerror = () => {
+    if (finalized) return;
+    finalized = true;
+    es.close();
+    if (!finalResult.error) finalResult = { ok: false, error: "SSE connection error" };
+    onFinal?.(finalResult);
+  };
+  return () => {
+    if (!finalized) {
+      finalized = true;
+      es.close();
+    }
+  };
+}
+
+// Legacy alias kept for MediaDialog — typed specifically for Media.
 export function subscribeToMediaJob(
   streamUrl: string,
   onEvent: (ev: MediaEvent) => void,

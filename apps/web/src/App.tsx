@@ -8,6 +8,8 @@ import NewProjectDialog from "./components/NewProjectDialog";
 import EmptyState from "./components/EmptyState";
 import ContextPanel from "./components/ContextPanel";
 import ErrorBoundary from "./components/ErrorBoundary";
+import MergeDialog from "./components/MergeDialog";
+import PromptBar from "./components/PromptBar";
 import { useUI } from "./lib/store";
 import { api } from "./lib/api";
 
@@ -47,11 +49,13 @@ export default function App() {
         <ErrorBoundary>
           {project ? <Canvas /> : <EmptyState onNewProject={() => setNewProjectOpen(true)} />}
         </ErrorBoundary>
+        {project && <PromptBar />}
       </div>
 
       <NewProjectDialog open={newProjectOpen} onClose={() => setNewProjectOpen(false)} />
       <ForkDialog />
       <MediaDialog />
+      <MergeDialog />
       <BeforeAfterViewer />
       <ContextPanel />
     </div>
