@@ -69,9 +69,9 @@ export default function ForkDialog() {
   const ctaLabel = shootout ? "Run shootout (3 models)" : `Fork ${n}×`;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl">
-        <div className="flex items-center justify-between p-4 border-b border-zinc-800">
+    <div className="fixed inset-0 z-50 bg-zinc-900/40 flex items-center justify-center p-4">
+      <div className="w-full max-w-2xl bg-stone-50 border border-zinc-200 rounded-xl shadow-2xl">
+        <div className="flex items-center justify-between p-4 border-b border-zinc-200">
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-amber-400" />
             <div>
@@ -81,20 +81,20 @@ export default function ForkDialog() {
               </p>
             </div>
           </div>
-          <button onClick={closeFork} className="text-zinc-400 hover:text-zinc-100">
+          <button onClick={closeFork} className="text-zinc-500 hover:text-zinc-900">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <div className="p-4 space-y-4">
           <div>
-            <label className="text-xs text-zinc-400 mb-1.5 block">Prompt</label>
+            <label className="text-xs text-zinc-500 mb-1.5 block">Prompt</label>
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               rows={4}
               placeholder="e.g., make the hero warmer and more playful, enlarge the CTA button…"
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+              className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/40"
               disabled={running}
               autoFocus
             />
@@ -104,7 +104,7 @@ export default function ForkDialog() {
                   key={p}
                   onClick={() => setPrompt(p)}
                   disabled={running}
-                  className="text-[11px] px-2 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 hover:border-zinc-600"
+                  className="text-[11px] px-2 py-1 rounded-full bg-white border border-zinc-200 text-zinc-500 hover:text-zinc-900 hover:border-zinc-400"
                 >
                   {p}
                 </button>
@@ -120,16 +120,16 @@ export default function ForkDialog() {
             className={clsx(
               "w-full flex items-start gap-3 px-3 py-2.5 rounded-lg border text-left transition",
               shootout
-                ? "bg-fuchsia-500/10 border-fuchsia-500/60"
-                : "bg-zinc-900 border-zinc-800 hover:border-zinc-600"
+                ? "bg-fuchsia-50 border-fuchsia-500/60"
+                : "bg-white border-zinc-200 hover:border-zinc-400"
             )}
           >
-            <Swords className={clsx("w-4 h-4 mt-0.5", shootout ? "text-fuchsia-300" : "text-zinc-500")} />
+            <Swords className={clsx("w-4 h-4 mt-0.5", shootout ? "text-fuchsia-600" : "text-zinc-500")} />
             <div className="flex-1">
-              <div className={clsx("text-sm font-medium", shootout ? "text-fuchsia-100" : "text-zinc-200")}>
+              <div className={clsx("text-sm font-medium", shootout ? "text-fuchsia-700" : "text-zinc-800")}>
                 Model shootout
               </div>
-              <div className="text-[11px] text-zinc-400">
+              <div className="text-[11px] text-zinc-500">
                 Runs the same prompt on Haiku + Sonnet + Opus in parallel. Three sibling variants on the canvas.
               </div>
             </div>
@@ -138,7 +138,7 @@ export default function ForkDialog() {
                 "text-[10px] px-1.5 py-0.5 rounded border",
                 shootout
                   ? "bg-fuchsia-500 text-black border-fuchsia-400"
-                  : "text-zinc-500 border-zinc-700"
+                  : "text-zinc-500 border-zinc-300"
               )}
             >
               {shootout ? "ON" : "OFF"}
@@ -147,7 +147,7 @@ export default function ForkDialog() {
 
           <div className={clsx("grid grid-cols-2 gap-4 transition", shootout && "opacity-40 pointer-events-none")}>
             <div>
-              <label className="text-xs text-zinc-400 mb-1.5 block">Model</label>
+              <label className="text-xs text-zinc-500 mb-1.5 block">Model</label>
               <div className="flex gap-1">
                 {MODELS.map((m) => (
                   <button
@@ -157,8 +157,8 @@ export default function ForkDialog() {
                     className={clsx(
                       "flex-1 px-2 py-1.5 rounded text-xs border",
                       model === m.id
-                        ? "bg-amber-500/20 border-amber-500 text-amber-200"
-                        : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-600"
+                        ? "bg-amber-100 border-amber-500 text-amber-700"
+                        : "bg-white border-zinc-200 text-zinc-500 hover:border-zinc-400"
                     )}
                     title={m.hint}
                   >
@@ -169,7 +169,7 @@ export default function ForkDialog() {
             </div>
 
             <div>
-              <label className="text-xs text-zinc-400 mb-1.5 block">Variants</label>
+              <label className="text-xs text-zinc-500 mb-1.5 block">Variants</label>
               <div className="flex gap-1">
                 {[1, 2, 3].map((k) => (
                   <button
@@ -179,8 +179,8 @@ export default function ForkDialog() {
                     className={clsx(
                       "flex-1 px-2 py-1.5 rounded text-xs border",
                       n === k
-                        ? "bg-amber-500/20 border-amber-500 text-amber-200"
-                        : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-600"
+                        ? "bg-amber-100 border-amber-500 text-amber-700"
+                        : "bg-white border-zinc-200 text-zinc-500 hover:border-zinc-400"
                     )}
                   >
                     {k}
@@ -191,13 +191,13 @@ export default function ForkDialog() {
           </div>
 
           {error && (
-            <div className="text-xs text-rose-400 bg-rose-950/40 border border-rose-900 rounded px-3 py-2">
+            <div className="text-xs text-rose-400 bg-rose-50 border border-rose-300 rounded px-3 py-2">
               {error}
             </div>
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-2 p-4 border-t border-zinc-800 bg-zinc-950/60">
+        <div className="flex items-center justify-between gap-2 p-4 border-t border-zinc-200 bg-stone-50/60">
           <div className="text-[11px] text-zinc-500">
             Generating {effectiveCount} variant{effectiveCount === 1 ? "" : "s"} in parallel
             {shootout && " — one per model"}
@@ -206,7 +206,7 @@ export default function ForkDialog() {
             <button
               onClick={closeFork}
               disabled={running}
-              className="px-3 py-1.5 text-sm text-zinc-400 hover:text-zinc-100"
+              className="px-3 py-1.5 text-sm text-zinc-500 hover:text-zinc-900"
             >
               Cancel
             </button>

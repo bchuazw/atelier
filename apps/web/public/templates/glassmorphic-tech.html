@@ -1,0 +1,277 @@
+<!-- Template: Orbit — glassmorphic tech, dark purple gradient + frosted cards -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Orbit — Every signal, in one field.</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: #0b051a;
+    color: #eae6ff;
+    font-family: 'Inter', sans-serif;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+  body {
+    background:
+      radial-gradient(ellipse 80% 60% at 20% 10%, rgba(130, 80, 255, 0.45), transparent 60%),
+      radial-gradient(ellipse 70% 50% at 85% 30%, rgba(60, 210, 255, 0.25), transparent 55%),
+      radial-gradient(ellipse 60% 50% at 50% 100%, rgba(190, 70, 255, 0.3), transparent 60%),
+      linear-gradient(180deg, #0b051a 0%, #140830 50%, #0b051a 100%);
+    background-attachment: fixed;
+  }
+  :root {
+    --cyan: #6ef3ff;
+    --violet: #b78aff;
+    --ink: #eae6ff;
+  }
+
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(11, 5, 26, 0.55);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .nav-inner {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 18px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .logo {
+    font-weight: 700;
+    font-size: 20px;
+    letter-spacing: -0.01em;
+    background: linear-gradient(90deg, var(--cyan), var(--violet));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .nav-links {
+    display: flex;
+    gap: 32px;
+    list-style: none;
+  }
+  .nav-links a {
+    color: rgba(234, 230, 255, 0.7);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .nav-links a:hover { color: var(--cyan); }
+  .cta-small {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--ink);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    padding: 9px 18px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+    backdrop-filter: blur(8px);
+  }
+  .cta-small:hover { background: rgba(255, 255, 255, 0.14); }
+
+  .hero {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 120px 32px 80px;
+    text-align: center;
+    position: relative;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    padding: 7px 16px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 32px;
+    backdrop-filter: blur(10px);
+  }
+  .chip-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--cyan);
+    box-shadow: 0 0 10px var(--cyan);
+  }
+  h1 {
+    font-size: clamp(44px, 7vw, 80px);
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.035em;
+    margin-bottom: 28px;
+  }
+  h1 .grad {
+    background: linear-gradient(90deg, var(--cyan) 0%, var(--violet) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .subhead {
+    font-size: 18px;
+    color: rgba(234, 230, 255, 0.72);
+    max-width: 620px;
+    margin: 0 auto 44px;
+    line-height: 1.6;
+  }
+  .hero-actions {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--cyan), var(--violet));
+    color: #0b051a;
+    padding: 14px 28px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-size: 15px;
+    font-weight: 600;
+    box-shadow: 0 0 30px rgba(110, 243, 255, 0.35);
+  }
+  .btn-secondary {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--ink);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    padding: 14px 24px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-size: 15px;
+    font-weight: 500;
+    backdrop-filter: blur(10px);
+  }
+
+  .glass-grid {
+    max-width: 1100px;
+    margin: 72px auto 0;
+    padding: 0 32px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+  .glass-card {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 18px;
+    padding: 22px;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    text-align: left;
+  }
+  .glass-card .metric {
+    font-size: 28px;
+    font-weight: 700;
+    background: linear-gradient(90deg, var(--cyan), var(--violet));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    margin-bottom: 6px;
+  }
+  .glass-card .label {
+    font-size: 13px;
+    color: rgba(234, 230, 255, 0.6);
+  }
+
+  .trusted {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 80px 32px 120px;
+    text-align: center;
+  }
+  .trusted-label {
+    font-size: 12px;
+    color: rgba(234, 230, 255, 0.5);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    margin-bottom: 28px;
+  }
+  .trusted-row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 44px;
+  }
+  .trusted-row span {
+    font-size: 17px;
+    font-weight: 600;
+    color: rgba(234, 230, 255, 0.55);
+    letter-spacing: -0.01em;
+  }
+
+  @media (max-width: 768px) {
+    .nav-links { display: none; }
+    .glass-grid { grid-template-columns: 1fr; }
+    .trusted-row { gap: 20px; }
+  }
+</style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <div class="logo">◐ Orbit</div>
+      <ul class="nav-links">
+        <li><a href="#">Platform</a></li>
+        <li><a href="#">Integrations</a></li>
+        <li><a href="#">Changelog</a></li>
+        <li><a href="#">Docs</a></li>
+      </ul>
+      <button class="cta-small">Launch console</button>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <div class="chip"><span class="chip-dot"></span>Real-time signal graph · live</div>
+    <h1>Every signal,<br><span class="grad">in one field.</span></h1>
+    <p class="subhead">Orbit unifies telemetry, billing events, and user activity into one queryable stream. Trigger anything from anywhere, in under 30ms.</p>
+    <div class="hero-actions">
+      <a href="#" class="btn-primary">Start building</a>
+      <a href="#" class="btn-secondary">Live demo →</a>
+    </div>
+
+    <div class="glass-grid">
+      <div class="glass-card">
+        <div class="metric">28ms</div>
+        <div class="label">p95 query latency across 12 regions</div>
+      </div>
+      <div class="glass-card">
+        <div class="metric">4.2B</div>
+        <div class="label">events routed in the last 24h</div>
+      </div>
+      <div class="glass-card">
+        <div class="metric">99.998%</div>
+        <div class="label">uptime this quarter, no asterisk</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="trusted">
+    <div class="trusted-label">Operating on</div>
+    <div class="trusted-row">
+      <span>Nimbus</span>
+      <span>Halvar</span>
+      <span>Parity Labs</span>
+      <span>Quanta</span>
+      <span>Zephyr</span>
+    </div>
+  </section>
+</body>
+</html>

@@ -213,15 +213,15 @@ export default function MergeDialog() {
 
   function renderStepIcon(s: StepState) {
     if (s === "done") return <Check className="w-3.5 h-3.5 text-emerald-400" />;
-    if (s === "active") return <Loader2 className="w-3.5 h-3.5 animate-spin text-fuchsia-300" />;
+    if (s === "active") return <Loader2 className="w-3.5 h-3.5 animate-spin text-fuchsia-600" />;
     if (s === "error") return <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />;
-    return <CircleDot className="w-3.5 h-3.5 text-zinc-600" />;
+    return <CircleDot className="w-3.5 h-3.5 text-zinc-400" />;
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl bg-zinc-950 border border-fuchsia-900/60 rounded-xl shadow-2xl">
-        <div className="flex items-center justify-between p-4 border-b border-zinc-800">
+    <div className="fixed inset-0 z-50 bg-zinc-900/40 flex items-center justify-center p-4">
+      <div className="w-full max-w-2xl bg-stone-50 border border-fuchsia-300 rounded-xl shadow-2xl">
+        <div className="flex items-center justify-between p-4 border-b border-zinc-200">
           <div className="flex items-center gap-2">
             <Shuffle className="w-5 h-5 text-fuchsia-400" />
             <div>
@@ -231,28 +231,28 @@ export default function MergeDialog() {
               </p>
             </div>
           </div>
-          <button onClick={closeMergeDialog} className="text-zinc-400 hover:text-zinc-100">
+          <button onClick={closeMergeDialog} className="text-zinc-500 hover:text-zinc-900">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <div className="p-4 space-y-4">
           <div className="flex items-stretch gap-3 text-[12px]">
-            <div className="flex-1 p-3 rounded-lg bg-zinc-900 border border-zinc-800">
+            <div className="flex-1 p-3 rounded-lg bg-white border border-zinc-200">
               <div className="text-[10px] uppercase tracking-wider text-zinc-500">Source (gives)</div>
-              <div className="text-fuchsia-300 font-medium truncate">{source.title || "Untitled"}</div>
+              <div className="text-fuchsia-600 font-medium truncate">{source.title || "Untitled"}</div>
               {source.summary && <div className="text-[11px] text-zinc-500 line-clamp-2 mt-0.5">{source.summary}</div>}
             </div>
             <div className="self-center text-fuchsia-400">→</div>
-            <div className="flex-1 p-3 rounded-lg bg-zinc-900 border border-zinc-800">
+            <div className="flex-1 p-3 rounded-lg bg-white border border-zinc-200">
               <div className="text-[10px] uppercase tracking-wider text-zinc-500">Target (base)</div>
-              <div className="text-zinc-100 font-medium truncate">{target.title || "Untitled"}</div>
+              <div className="text-zinc-900 font-medium truncate">{target.title || "Untitled"}</div>
               {target.summary && <div className="text-[11px] text-zinc-500 line-clamp-2 mt-0.5">{target.summary}</div>}
             </div>
           </div>
 
           <div>
-            <label className="text-xs text-zinc-400 mb-1.5 block">
+            <label className="text-xs text-zinc-500 mb-1.5 block">
               What to import from the source
             </label>
             <div className="grid grid-cols-2 gap-2">
@@ -265,21 +265,21 @@ export default function MergeDialog() {
                   className={clsx(
                     "flex items-start gap-2 px-3 py-2 rounded-lg border text-left transition",
                     selected[a.id]
-                      ? "bg-fuchsia-500/10 border-fuchsia-500/60"
-                      : "bg-zinc-900 border-zinc-800 hover:border-zinc-600"
+                      ? "bg-fuchsia-50 border-fuchsia-500/60"
+                      : "bg-white border-zinc-200 hover:border-zinc-400"
                   )}
                 >
                   <a.icon
                     className={clsx(
                       "w-4 h-4 mt-0.5 flex-shrink-0",
-                      selected[a.id] ? "text-fuchsia-300" : "text-zinc-500"
+                      selected[a.id] ? "text-fuchsia-600" : "text-zinc-500"
                     )}
                   />
                   <div className="flex-1 min-w-0">
-                    <div className={clsx("text-sm font-medium", selected[a.id] ? "text-fuchsia-100" : "text-zinc-200")}>
+                    <div className={clsx("text-sm font-medium", selected[a.id] ? "text-fuchsia-700" : "text-zinc-800")}>
                       {a.label}
                     </div>
-                    <div className="text-[11px] text-zinc-400 leading-snug">{a.hint}</div>
+                    <div className="text-[11px] text-zinc-500 leading-snug">{a.hint}</div>
                   </div>
                 </button>
               ))}
@@ -291,8 +291,8 @@ export default function MergeDialog() {
               className={clsx(
                 "mt-2 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded text-xs border",
                 selected.all
-                  ? "bg-fuchsia-500/20 border-fuchsia-500 text-fuchsia-100"
-                  : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-600"
+                  ? "bg-fuchsia-100 border-fuchsia-500 text-fuchsia-700"
+                  : "bg-white border-zinc-200 text-zinc-500 hover:border-zinc-400"
               )}
             >
               <Sparkles className="w-3 h-3" /> Or: import everything that makes them different
@@ -300,31 +300,31 @@ export default function MergeDialog() {
           </div>
 
           <div>
-            <label className="text-xs text-zinc-400 mb-1.5 block">
-              Additional note <span className="text-zinc-600">(optional)</span>
+            <label className="text-xs text-zinc-500 mb-1.5 block">
+              Additional note <span className="text-zinc-400">(optional)</span>
             </label>
             <textarea
               value={userNote}
               onChange={(e) => setUserNote(e.target.value)}
               rows={2}
               placeholder="e.g., keep the CTA button solid, not ghost"
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40"
+              className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40"
               disabled={running}
             />
           </div>
 
           {(running || error) && (
-            <div className="rounded-lg border border-fuchsia-900/60 bg-fuchsia-950/20 p-3 space-y-1.5">
+            <div className="rounded-lg border border-fuchsia-300 bg-fuchsia-50 p-3 space-y-1.5">
               {STEPS.map((s) => (
                 <div key={s.id} className="flex items-center gap-2 text-[12px]">
                   {renderStepIcon(stepState[s.id].state)}
                   <span
                     className={clsx(
                       "flex-1",
-                      stepState[s.id].state === "done" && "text-zinc-200",
-                      stepState[s.id].state === "active" && "text-fuchsia-100 font-medium",
+                      stepState[s.id].state === "done" && "text-zinc-800",
+                      stepState[s.id].state === "active" && "text-fuchsia-700 font-medium",
                       stepState[s.id].state === "pending" && "text-zinc-500",
-                      stepState[s.id].state === "error" && "text-rose-200"
+                      stepState[s.id].state === "error" && "text-rose-700"
                     )}
                   >
                     {s.label}
@@ -338,13 +338,13 @@ export default function MergeDialog() {
           )}
 
           {error && (
-            <div className="text-xs text-rose-400 bg-rose-950/40 border border-rose-900 rounded px-3 py-2">
+            <div className="text-xs text-rose-400 bg-rose-50 border border-rose-300 rounded px-3 py-2">
               {error}
             </div>
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-2 p-4 border-t border-zinc-800 bg-zinc-950/60">
+        <div className="flex items-center justify-between gap-2 p-4 border-t border-zinc-200 bg-stone-50/60">
           <div className="text-[11px] text-zinc-500">
             Opus 4.7 synthesizes — typical latency 25–45s.
           </div>
@@ -352,7 +352,7 @@ export default function MergeDialog() {
             <button
               onClick={closeMergeDialog}
               disabled={running}
-              className="px-3 py-1.5 text-sm text-zinc-400 hover:text-zinc-100"
+              className="px-3 py-1.5 text-sm text-zinc-500 hover:text-zinc-900"
             >
               {running ? "Close" : "Cancel"}
             </button>

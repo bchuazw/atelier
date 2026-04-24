@@ -1485,10 +1485,17 @@ Replaces §21.16. Ordered strictly by what unlocks the submission (hosted URL + 
 **Sponsor model:** Claude owns text/code/HTML. MiniMax owns media (image via image-01, video via T2V-01-Director). Genspark has no public API and participates as a sponsor via branded screen-recording cameo in the 2-min demo video.
 
 **Cycle 2 shipped (2026-04-24):**
-- Fetcher: forces UTF-8 when server omits charset (fixes em-dash / arrow mojibake caught during live verification), proper Accept headers, one-shot retry on transient 5xx, broader analytics-script deny list, auto-injects `<meta charset="utf-8">` on saved seeds.
-- **Paste-HTML seed path** — `POST /projects` now accepts `seed_html` alongside `seed_url`; frontend dialog has a "Paste HTML" tab. Lets us skip real-site fetching entirely for polished demos.
-- **Delete cascade** — `DELETE /projects` removes every variant's files from Supabase via `storage.delete_variant_tree`, so the judging URL stays curated.
-- **Keep-warm** — lifespan-managed background task inside the API pings `ATELIER_KEEPWARM_URLS` (API /healthz + sandbox /healthz) every 10 min. Shipped on Render with the two healthz URLs wired in.
-- **Error boundary** around the canvas — a React tree crash now shows a recoverable panel, not a white screen.
+- Fetcher: forces UTF-8 when server omits charset, proper Accept headers, retry on transient 5xx, broader analytics-script deny list, auto-injects `<meta charset="utf-8">` on saved seeds.
+- **Paste-HTML seed path** — `POST /projects` accepts `seed_html` alongside `seed_url`; frontend dialog has a "Paste HTML" tab for polished starts.
+- **Delete cascade** — `DELETE /projects` removes every variant's files from Supabase via `storage.delete_variant_tree`.
+- **Keep-warm** — lifespan-managed background task pings `ATELIER_KEEPWARM_URLS` every 10 min. Log lines visible in Render after the basicConfig fix.
+- **Error boundary** around the canvas.
 
-**Cycle 3 (next):** the 2-minute Hyperframes submission video. Scaffold `demo-video/`, Playwright capture script against the hosted URL, composition HTML, TTS narration, render MP4.
+**Cycle 3 shipped (2026-04-24):**
+- **Drag-to-combine** — drop a variant node onto another to synthesize a new variant. Backend `POST /nodes/{target_id}/merge/jobs` + SSE stream runs an Opus-powered pipeline: Claude looks at both HTMLs and lifts only the selected aspects (typography / palette / layout / copy / all) from source onto target. New variant gets two incoming edges: `type="merge"` solid fuchsia from target, `type="contribution"` dashed animated from source.
+- **MergeDialog** — aspect picker (four cards + "all"), optional user note, live SSE stepper (Opus synthesis → materialization), auto-opens Before/After viewer with target=A + merged=B on completion.
+- **Drag gesture** — canvas uses `document.elementFromPoint` during `onNodeDrag` to detect hover-over-another-node, pulses a fuchsia "Combine →" ring on the hover target, snaps the source back to its origin on drop, and opens the MergeDialog.
+- **Animations** — `atelier-merge-source` (source node dims during drag), `atelier-merge-glow` (pulsing ring on hover target), `atelier-merge-arrive` (new merged node scale-fade-in with glow). Contribution edges animate along the path.
+- **Persistent prompt bar** — docked at bottom-center of the canvas. Targets the selected node (or checkpoint / working / latest / seed in that order). Enter submits a fork. Quick chips + a tip about drag-to-combine. Replaces the modal-only fork flow as the primary way to iterate.
+
+**Cycle 4 (next):** the 2-minute Hyperframes submission video. The drag-to-combine gesture is now the headline beat to record. Playwright capture script drives the hosted URL; ElevenLabs/OpenAI TTS for narration; Hyperframes composition renders the MP4.

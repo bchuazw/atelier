@@ -10,13 +10,13 @@ export type VariantNodeData = {
 };
 
 const typeStyles: Record<string, string> = {
-  seed: "ring-blue-500/50 bg-blue-950/40",
-  variant: "ring-amber-500/40 bg-zinc-900",
-  feedback: "ring-rose-500/40 bg-rose-950/40",
-  critic: "ring-emerald-500/40 bg-emerald-950/40",
-  pipeline: "ring-purple-500/40 bg-purple-950/40",
-  live: "ring-cyan-500/40 bg-cyan-950/40",
-  code: "ring-slate-500/40 bg-slate-950/40",
+  seed: "ring-blue-300 bg-blue-50",
+  variant: "ring-amber-500/40 bg-white",
+  feedback: "ring-rose-500/40 bg-rose-50",
+  critic: "ring-emerald-300 bg-emerald-50",
+  pipeline: "ring-purple-300 bg-purple-50",
+  live: "ring-cyan-300 bg-cyan-50",
+  code: "ring-slate-300 bg-slate-50",
 };
 
 const statusColor: Record<string, string> = {
@@ -61,8 +61,8 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
   return (
     <div
       className={clsx(
-        "relative w-[260px] rounded-xl ring-1 shadow-lg transition text-zinc-100 overflow-hidden",
-        typeStyles[node.type] || "ring-zinc-700 bg-zinc-900",
+        "relative w-[260px] rounded-xl ring-1 shadow-lg transition text-zinc-900 overflow-hidden",
+        typeStyles[node.type] || "ring-zinc-700 bg-white",
         selected && "ring-2 ring-amber-400",
         (isA || isB) && "ring-2 ring-cyan-400",
         isCheckpoint && "ring-2 ring-fuchsia-400"
@@ -72,7 +72,7 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
       <Handle type="source" position={Position.Bottom} />
 
       {/* Live thumbnail iframe (sandboxed) */}
-      <div className="relative h-[140px] bg-zinc-950 border-b border-zinc-800 overflow-hidden">
+      <div className="relative h-[140px] bg-stone-50 border-b border-zinc-200 overflow-hidden">
         {node.sandbox_url ? (
           <iframe
             src={node.sandbox_url}
@@ -92,7 +92,7 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
             {node.build_status}
           </div>
         )}
-        <div className="absolute top-1.5 left-1.5 rounded-md bg-black/70 text-[10px] uppercase tracking-wide px-1.5 py-0.5 text-zinc-300">
+        <div className="absolute top-1.5 left-1.5 rounded-md bg-zinc-900/40 text-[10px] uppercase tracking-wide px-1.5 py-0.5 text-zinc-700">
           {node.type}
         </div>
         {isCheckpoint && (
@@ -112,7 +112,7 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
           <span className="truncate">{node.title || "Untitled"}</span>
         </div>
         {node.summary && (
-          <p className="text-[11px] text-zinc-400 leading-snug line-clamp-2">{node.summary}</p>
+          <p className="text-[11px] text-zinc-500 leading-snug line-clamp-2">{node.summary}</p>
         )}
         {node.model_used && (
           <div className="text-[10px] text-zinc-500 font-mono">{node.model_used}</div>
@@ -125,7 +125,7 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
               openFork(node.id);
             }}
             disabled={node.build_status !== "ready"}
-            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-amber-600/20 hover:bg-amber-600/40 text-amber-200 disabled:opacity-40"
+            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-amber-600/20 hover:bg-amber-600/40 text-amber-700 disabled:opacity-40"
           >
             <GitFork className="w-3 h-3" /> Fork
           </button>
@@ -136,7 +136,7 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
             }}
             disabled={node.build_status !== "ready"}
             title="Generate hero media (Claude → Genspark → Claude)"
-            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-fuchsia-600/20 hover:bg-fuchsia-600/40 text-fuchsia-200 disabled:opacity-40"
+            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-fuchsia-100 hover:bg-fuchsia-200 text-fuchsia-700 disabled:opacity-40"
           >
             <Wand2 className="w-3 h-3" /> Hero
           </button>
@@ -152,7 +152,7 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
                 setCompareB(null);
               }
             }}
-            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-cyan-600/20 hover:bg-cyan-600/40 text-cyan-200"
+            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-cyan-600/20 hover:bg-cyan-600/40 text-cyan-700"
           >
             <Flag className="w-3 h-3" /> Pin
           </button>
@@ -163,8 +163,8 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
             className={clsx(
               "flex items-center gap-1 text-[11px] px-2 py-1 rounded",
               isCheckpoint
-                ? "bg-fuchsia-600/40 text-fuchsia-100 cursor-default"
-                : "bg-fuchsia-600/20 hover:bg-fuchsia-600/40 text-fuchsia-200"
+                ? "bg-fuchsia-200 text-fuchsia-700 cursor-default"
+                : "bg-fuchsia-100 hover:bg-fuchsia-200 text-fuchsia-700"
             )}
           >
             <Anchor className="w-3 h-3" /> {isCheckpoint ? "Head" : "Checkpoint"}
@@ -175,7 +175,7 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
               target="_blank"
               rel="noreferrer"
               onClick={(e) => e.stopPropagation()}
-              className="flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-zinc-700/40 hover:bg-zinc-700/70 text-zinc-300 ml-auto"
+              className="flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-zinc-200/40 hover:bg-zinc-200/70 text-zinc-700 ml-auto"
             >
               <Eye className="w-3 h-3" /> Open
             </a>

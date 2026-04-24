@@ -1,0 +1,236 @@
+<!-- Template: Vector — kinetic-bold, swiss-brutalist, mono body + one hot accent -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Vector — Ship velocity. Measured.</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@500;700;900&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: #fafaf7;
+    color: #0a0a0a;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  :root {
+    --accent: #ff3b1f;
+    --ink: #0a0a0a;
+    --paper: #fafaf7;
+  }
+
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: var(--paper);
+    border-bottom: 2px solid var(--ink);
+  }
+  .nav-inner {
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 18px 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .logo {
+    font-family: 'Inter', sans-serif;
+    font-weight: 900;
+    font-size: 22px;
+    letter-spacing: -0.04em;
+    text-transform: uppercase;
+  }
+  .logo::before {
+    content: '';
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    background: var(--accent);
+    margin-right: 10px;
+    vertical-align: middle;
+  }
+  .nav-links {
+    display: flex;
+    gap: 32px;
+    list-style: none;
+  }
+  .nav-links a {
+    color: var(--ink);
+    text-decoration: none;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 500;
+  }
+  .nav-links a:hover { color: var(--accent); }
+  .cta-small {
+    background: var(--ink);
+    color: var(--paper);
+    border: 2px solid var(--ink);
+    padding: 10px 20px;
+    font-family: inherit;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .cta-small:hover { background: var(--accent); border-color: var(--accent); }
+
+  .hero {
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 80px 40px 60px;
+    position: relative;
+  }
+  .tag {
+    display: inline-block;
+    background: var(--accent);
+    color: var(--paper);
+    padding: 6px 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-weight: 700;
+    margin-bottom: 36px;
+  }
+  h1 {
+    font-family: 'Inter', sans-serif;
+    font-weight: 900;
+    font-size: clamp(56px, 12vw, 180px);
+    line-height: 0.88;
+    letter-spacing: -0.06em;
+    text-transform: uppercase;
+    margin-bottom: 40px;
+  }
+  h1 .accent-block {
+    display: inline-block;
+    background: var(--accent);
+    color: var(--paper);
+    padding: 0 0.12em;
+  }
+  .subhead {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px;
+    max-width: 560px;
+    color: #333;
+    margin-bottom: 44px;
+    line-height: 1.6;
+  }
+  .subhead::before {
+    content: '// ';
+    color: var(--accent);
+    font-weight: 500;
+  }
+  .hero-actions {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .btn-primary {
+    background: var(--ink);
+    color: var(--paper);
+    padding: 18px 36px;
+    text-decoration: none;
+    font-family: inherit;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-weight: 500;
+    border: 2px solid var(--ink);
+  }
+  .btn-primary:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .btn-secondary {
+    color: var(--ink);
+    text-decoration: none;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-weight: 500;
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 2px;
+  }
+  .btn-secondary:hover { color: var(--accent); border-color: var(--accent); }
+
+  .trusted {
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 40px 40px 80px;
+    border-top: 2px solid var(--ink);
+  }
+  .trusted-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: #666;
+    margin-bottom: 24px;
+    padding-top: 32px;
+  }
+  .trusted-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0;
+    border-left: 2px solid var(--ink);
+  }
+  .trusted-row span {
+    font-family: 'Inter', sans-serif;
+    font-weight: 900;
+    font-size: 18px;
+    text-transform: uppercase;
+    letter-spacing: -0.02em;
+    padding: 24px 16px;
+    border-right: 2px solid var(--ink);
+    text-align: center;
+  }
+
+  @media (max-width: 768px) {
+    .nav-links { display: none; }
+    .trusted-row { grid-template-columns: repeat(2, 1fr); }
+    .trusted-row span { border-bottom: 2px solid var(--ink); }
+  }
+</style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <div class="logo">Vector/</div>
+      <ul class="nav-links">
+        <li><a href="#">Product</a></li>
+        <li><a href="#">Docs</a></li>
+        <li><a href="#">Pricing</a></li>
+        <li><a href="#">Changelog</a></li>
+      </ul>
+      <button class="cta-small">Get Access</button>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <div class="tag">v3.2 — Shipped</div>
+    <h1>Ship<br>velocity.<br><span class="accent-block">Measured.</span></h1>
+    <p class="subhead">Deploy observability for teams that push to production twenty times a day. Instrument once, query forever, argue less.</p>
+    <div class="hero-actions">
+      <a href="#" class="btn-primary">Start Trial →</a>
+      <a href="#" class="btn-secondary">Read the docs</a>
+    </div>
+  </section>
+
+  <section class="trusted">
+    <div class="trusted-label">// Deployed at</div>
+    <div class="trusted-row">
+      <span>Parallax</span>
+      <span>Fleet.io</span>
+      <span>Northwind</span>
+      <span>Keel</span>
+      <span>Grid &amp; Loop</span>
+    </div>
+  </section>
+</body>
+</html>

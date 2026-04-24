@@ -22,7 +22,7 @@ export default function EmptyState({ onNewProject }: { onNewProject: () => void 
   }
 
   return (
-    <div className="w-full h-full flex items-center justify-center bg-zinc-950 text-zinc-300">
+    <div className="w-full h-full flex items-center justify-center bg-stone-50 text-zinc-700">
       <div className="max-w-xl w-full space-y-8 p-8">
         <div className="text-center space-y-2">
           <div className="inline-flex items-center gap-2 text-amber-400">
@@ -52,10 +52,10 @@ export default function EmptyState({ onNewProject }: { onNewProject: () => void 
                 <button
                   key={p.id}
                   onClick={() => open(p)}
-                  className="w-full text-left flex items-center justify-between px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-zinc-600"
+                  className="w-full text-left flex items-center justify-between px-3 py-2 rounded-lg bg-white border border-zinc-200 hover:border-zinc-400"
                 >
                   <div>
-                    <div className="text-sm text-zinc-100 font-medium">{p.name}</div>
+                    <div className="text-sm text-zinc-900 font-medium">{p.name}</div>
                     {p.seed_url && (
                       <div className="text-[11px] text-zinc-500 font-mono truncate">{p.seed_url}</div>
                     )}

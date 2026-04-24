@@ -70,20 +70,20 @@ export default function BeforeAfterViewer() {
   return (
     <div className="fixed inset-0 z-40 bg-black/80 flex flex-col">
       {/* Top bar */}
-      <div className="flex items-center justify-between px-4 py-2 bg-zinc-950 border-b border-zinc-800">
+      <div className="flex items-center justify-between px-4 py-2 bg-stone-50 border-b border-zinc-200">
         <div className="flex items-center gap-3 text-sm">
           <button
             onClick={closeViewer}
-            className="flex items-center gap-1 text-zinc-400 hover:text-zinc-100"
+            className="flex items-center gap-1 text-zinc-500 hover:text-zinc-900"
           >
             <X className="w-4 h-4" /> Close
           </button>
-          <span className="text-zinc-600">|</span>
+          <span className="text-zinc-400">|</span>
           <div className="flex items-center gap-2">
             <span className="text-cyan-300 font-medium">A:</span>
-            <span className="text-zinc-200">{nodeA?.title || "none"}</span>
+            <span className="text-zinc-800">{nodeA?.title || "none"}</span>
             <button
-              className="text-[10px] text-zinc-500 hover:text-zinc-300"
+              className="text-[10px] text-zinc-500 hover:text-zinc-700"
               onClick={() => setCompareA(null)}
             >
               unpin
@@ -91,9 +91,9 @@ export default function BeforeAfterViewer() {
           </div>
           <div className="flex items-center gap-2">
             <span className="text-cyan-300 font-medium">B:</span>
-            <span className="text-zinc-200">{nodeB?.title || "none"}</span>
+            <span className="text-zinc-800">{nodeB?.title || "none"}</span>
             <button
-              className="text-[10px] text-zinc-500 hover:text-zinc-300"
+              className="text-[10px] text-zinc-500 hover:text-zinc-700"
               onClick={() => setCompareB(null)}
             >
               unpin
@@ -119,10 +119,10 @@ export default function BeforeAfterViewer() {
       </div>
 
       {/* Viewport */}
-      <div className="flex-1 flex items-center justify-center overflow-auto bg-zinc-900 p-4">
+      <div className="flex-1 flex items-center justify-center overflow-auto bg-white p-4">
         <div
           ref={containerRef}
-          className="relative bg-zinc-950 shadow-2xl"
+          className="relative bg-stone-50 shadow-2xl"
           style={{ width: widthPx, height: "min(900px, calc(100vh - 120px))" }}
         >
           {spaceHeld ? (
@@ -157,7 +157,7 @@ export default function BeforeAfterViewer() {
           ) : (
             <>
               <div
-                className="absolute top-0 left-0 h-full overflow-hidden border-r border-zinc-800"
+                className="absolute top-0 left-0 h-full overflow-hidden border-r border-zinc-200"
                 style={{ width: `${divider}%` }}
               >
                 <iframe
@@ -203,11 +203,11 @@ export default function BeforeAfterViewer() {
       </div>
 
       {/* Bottom status */}
-      <div className="px-4 py-1.5 bg-zinc-950 border-t border-zinc-800 text-[11px] text-zinc-500 flex items-center justify-between">
+      <div className="px-4 py-1.5 bg-stone-50 border-t border-zinc-200 text-[11px] text-zinc-500 flex items-center justify-between">
         <div>
-          Hold <kbd className="px-1 bg-zinc-800 rounded">Space</kbd> to flip A fullscreen.
-          Press <kbd className="px-1 bg-zinc-800 rounded">O</kbd> for overlay mode.
-          Press <kbd className="px-1 bg-zinc-800 rounded">1/2/3</kbd> for viewports.
+          Hold <kbd className="px-1 bg-zinc-100 rounded">Space</kbd> to flip A fullscreen.
+          Press <kbd className="px-1 bg-zinc-100 rounded">O</kbd> for overlay mode.
+          Press <kbd className="px-1 bg-zinc-100 rounded">1/2/3</kbd> for viewports.
         </div>
         <div>
           {widthPx}px — divider {Math.round(divider)}%
@@ -234,7 +234,7 @@ function VPButton({
       title={title}
       className={clsx(
         "p-1.5 rounded",
-        active ? "bg-amber-500 text-black" : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+        active ? "bg-amber-500 text-black" : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
       )}
     >
       {children}

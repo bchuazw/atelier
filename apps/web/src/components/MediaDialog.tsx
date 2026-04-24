@@ -207,15 +207,15 @@ export default function MediaDialog() {
 
   function renderStepIcon(state: StepState) {
     if (state === "done") return <Check className="w-3.5 h-3.5 text-emerald-400" />;
-    if (state === "active") return <Loader2 className="w-3.5 h-3.5 animate-spin text-fuchsia-300" />;
+    if (state === "active") return <Loader2 className="w-3.5 h-3.5 animate-spin text-fuchsia-600" />;
     if (state === "error") return <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />;
-    return <CircleDot className="w-3.5 h-3.5 text-zinc-600" />;
+    return <CircleDot className="w-3.5 h-3.5 text-zinc-400" />;
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl">
-        <div className="flex items-center justify-between p-4 border-b border-zinc-800">
+    <div className="fixed inset-0 z-50 bg-zinc-900/40 flex items-center justify-center p-4">
+      <div className="w-full max-w-2xl bg-stone-50 border border-zinc-200 rounded-xl shadow-2xl">
+        <div className="flex items-center justify-between p-4 border-b border-zinc-200">
           <div className="flex items-center gap-2">
             <Wand2 className="w-5 h-5 text-fuchsia-400" />
             <div>
@@ -227,14 +227,14 @@ export default function MediaDialog() {
               </p>
             </div>
           </div>
-          <button onClick={closeMedia} className="text-zinc-400 hover:text-zinc-100">
+          <button onClick={closeMedia} className="text-zinc-500 hover:text-zinc-900">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <div className="p-4 space-y-4">
           <div>
-            <label className="text-xs text-zinc-400 mb-1.5 block">Asset kind</label>
+            <label className="text-xs text-zinc-500 mb-1.5 block">Asset kind</label>
             <div className="grid grid-cols-2 gap-2">
               {(
                 [
@@ -250,23 +250,23 @@ export default function MediaDialog() {
                   className={clsx(
                     "flex items-start gap-2 px-3 py-2.5 rounded-lg border text-left transition",
                     kind === k.id
-                      ? "bg-fuchsia-500/10 border-fuchsia-500/60"
-                      : "bg-zinc-900 border-zinc-800 hover:border-zinc-600"
+                      ? "bg-fuchsia-50 border-fuchsia-500/60"
+                      : "bg-white border-zinc-200 hover:border-zinc-400"
                   )}
                 >
                   <k.icon
-                    className={clsx("w-4 h-4 mt-0.5", kind === k.id ? "text-fuchsia-300" : "text-zinc-500")}
+                    className={clsx("w-4 h-4 mt-0.5", kind === k.id ? "text-fuchsia-600" : "text-zinc-500")}
                   />
                   <div className="flex-1">
                     <div
                       className={clsx(
                         "text-sm font-medium",
-                        kind === k.id ? "text-fuchsia-100" : "text-zinc-200"
+                        kind === k.id ? "text-fuchsia-700" : "text-zinc-800"
                       )}
                     >
                       {k.label}
                     </div>
-                    <div className="text-[11px] text-zinc-400">{k.hint}</div>
+                    <div className="text-[11px] text-zinc-500">{k.hint}</div>
                   </div>
                 </button>
               ))}
@@ -274,9 +274,9 @@ export default function MediaDialog() {
           </div>
 
           <div>
-            <label className="text-xs text-zinc-400 mb-1.5 block">
+            <label className="text-xs text-zinc-500 mb-1.5 block">
               What should the hero feel like?{" "}
-              <span className="text-zinc-600">
+              <span className="text-zinc-400">
                 (optional — Claude will infer from page tone if blank)
               </span>
             </label>
@@ -285,7 +285,7 @@ export default function MediaDialog() {
               onChange={(e) => setIntent(e.target.value)}
               rows={3}
               placeholder="e.g., warm editorial photo of two people laughing at a sunny outdoor café"
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40"
+              className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40"
               disabled={running}
               autoFocus
             />
@@ -295,7 +295,7 @@ export default function MediaDialog() {
                   key={p}
                   onClick={() => setIntent(p)}
                   disabled={running}
-                  className="text-[11px] px-2 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 hover:border-zinc-600"
+                  className="text-[11px] px-2 py-1 rounded-full bg-white border border-zinc-200 text-zinc-500 hover:text-zinc-900 hover:border-zinc-400"
                 >
                   {p}
                 </button>
@@ -304,7 +304,7 @@ export default function MediaDialog() {
           </div>
 
           <div>
-            <label className="text-xs text-zinc-400 mb-1.5 block">Aspect ratio</label>
+            <label className="text-xs text-zinc-500 mb-1.5 block">Aspect ratio</label>
             <div className="flex gap-1">
               {ASPECTS.map((a) => (
                 <button
@@ -314,8 +314,8 @@ export default function MediaDialog() {
                   className={clsx(
                     "flex-1 px-2 py-1.5 rounded text-xs border",
                     aspect === a
-                      ? "bg-fuchsia-500/20 border-fuchsia-500 text-fuchsia-100"
-                      : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-600"
+                      ? "bg-fuchsia-100 border-fuchsia-500 text-fuchsia-700"
+                      : "bg-white border-zinc-200 text-zinc-500 hover:border-zinc-400"
                   )}
                 >
                   {a}
@@ -325,7 +325,7 @@ export default function MediaDialog() {
           </div>
 
           {(running || error) && (
-            <div className="rounded-lg border border-fuchsia-900/60 bg-fuchsia-950/20 p-3 space-y-1.5">
+            <div className="rounded-lg border border-fuchsia-300 bg-fuchsia-50 p-3 space-y-1.5">
               {STEP_ORDER.map((id) => {
                 const s = steps[id];
                 return (
@@ -334,10 +334,10 @@ export default function MediaDialog() {
                     <span
                       className={clsx(
                         "flex-1",
-                        s.state === "done" && "text-zinc-200",
-                        s.state === "active" && "text-fuchsia-100 font-medium",
+                        s.state === "done" && "text-zinc-800",
+                        s.state === "active" && "text-fuchsia-700 font-medium",
                         s.state === "pending" && "text-zinc-500",
-                        s.state === "error" && "text-rose-200"
+                        s.state === "error" && "text-rose-700"
                       )}
                     >
                       {STEP_LABEL[id]}
@@ -349,21 +349,21 @@ export default function MediaDialog() {
                 );
               })}
               {imagePrompt && (
-                <div className="pt-2 mt-2 border-t border-fuchsia-900/40 text-[11px] text-zinc-400 leading-relaxed">
-                  <span className="text-fuchsia-300 font-medium">Prompt:</span> {imagePrompt}
+                <div className="pt-2 mt-2 border-t border-fuchsia-300/40 text-[11px] text-zinc-500 leading-relaxed">
+                  <span className="text-fuchsia-600 font-medium">Prompt:</span> {imagePrompt}
                 </div>
               )}
             </div>
           )}
 
           {error && (
-            <div className="text-xs text-rose-400 bg-rose-950/40 border border-rose-900 rounded px-3 py-2">
+            <div className="text-xs text-rose-400 bg-rose-50 border border-rose-300 rounded px-3 py-2">
               {error}
             </div>
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-2 p-4 border-t border-zinc-800 bg-zinc-950/60">
+        <div className="flex items-center justify-between gap-2 p-4 border-t border-zinc-200 bg-stone-50/60">
           <div className="text-[11px] text-zinc-500">
             Without a MiniMax API key, a labeled mock asset is generated so the flow still works end-to-end.
           </div>
@@ -371,7 +371,7 @@ export default function MediaDialog() {
             <button
               onClick={closeMedia}
               disabled={running}
-              className="px-3 py-1.5 text-sm text-zinc-400 hover:text-zinc-100"
+              className="px-3 py-1.5 text-sm text-zinc-500 hover:text-zinc-900"
             >
               {running ? "Close" : "Cancel"}
             </button>

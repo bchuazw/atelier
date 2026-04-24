@@ -1,0 +1,213 @@
+<!-- Template: Meridian — editorial serif, ink-on-cream, long-form publication -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Meridian — Writing, reconsidered.</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,700;1,500&family=Inter:wght@400;500;600&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: #f4efe6;
+    color: #14110f;
+    font-family: 'Inter', sans-serif;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(244, 239, 230, 0.92);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid rgba(20, 17, 15, 0.08);
+  }
+  .nav-inner {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 22px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .logo {
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+  }
+  .nav-links {
+    display: flex;
+    gap: 36px;
+    list-style: none;
+  }
+  .nav-links a {
+    color: #14110f;
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    opacity: 0.75;
+    transition: opacity 0.2s;
+  }
+  .nav-links a:hover { opacity: 1; }
+  .cta-small {
+    background: #14110f;
+    color: #f4efe6;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 2px;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  .hero {
+    max-width: 1020px;
+    margin: 0 auto;
+    padding: 140px 32px 100px;
+    text-align: center;
+  }
+  .eyebrow {
+    font-family: 'Playfair Display', serif;
+    font-style: italic;
+    font-size: 15px;
+    color: #6a5f52;
+    margin-bottom: 28px;
+    letter-spacing: 0.04em;
+  }
+  .eyebrow::before, .eyebrow::after {
+    content: '—';
+    margin: 0 14px;
+    opacity: 0.5;
+  }
+  h1 {
+    font-family: 'Playfair Display', serif;
+    font-weight: 500;
+    font-size: clamp(44px, 7vw, 84px);
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    margin-bottom: 32px;
+  }
+  h1 em {
+    font-weight: 500;
+    color: #7a2f1f;
+  }
+  .subhead {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(18px, 2vw, 22px);
+    line-height: 1.55;
+    color: #3a332d;
+    max-width: 640px;
+    margin: 0 auto 48px;
+    font-weight: 400;
+  }
+  .hero-actions {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .btn-primary {
+    background: #14110f;
+    color: #f4efe6;
+    padding: 16px 32px;
+    border-radius: 2px;
+    text-decoration: none;
+    font-size: 15px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    transition: transform 0.15s;
+  }
+  .btn-primary:hover { transform: translateY(-1px); }
+  .btn-secondary {
+    color: #14110f;
+    text-decoration: none;
+    font-size: 15px;
+    font-weight: 500;
+    border-bottom: 1px solid #14110f;
+    padding-bottom: 2px;
+    font-style: italic;
+    font-family: 'Playfair Display', serif;
+  }
+
+  .trusted {
+    max-width: 1020px;
+    margin: 0 auto;
+    padding: 60px 32px 120px;
+    border-top: 1px solid rgba(20, 17, 15, 0.12);
+    text-align: center;
+  }
+  .trusted-label {
+    font-family: 'Playfair Display', serif;
+    font-style: italic;
+    font-size: 14px;
+    color: #6a5f52;
+    margin-bottom: 32px;
+    margin-top: 40px;
+  }
+  .trusted-row {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 48px;
+  }
+  .trusted-row span {
+    font-family: 'Playfair Display', serif;
+    font-size: 20px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: #3a332d;
+    opacity: 0.7;
+  }
+
+  @media (max-width: 768px) {
+    .nav-links { display: none; }
+    .hero { padding: 80px 24px 60px; }
+    .trusted-row { gap: 24px; }
+    .trusted-row span { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <div class="logo">Meridian</div>
+      <ul class="nav-links">
+        <li><a href="#">Stories</a></li>
+        <li><a href="#">Authors</a></li>
+        <li><a href="#">Archive</a></li>
+        <li><a href="#">About</a></li>
+      </ul>
+      <button class="cta-small">Subscribe</button>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <div class="eyebrow">Issue No. 47</div>
+    <h1>Writing, <em>reconsidered</em>—for the slow reader.</h1>
+    <p class="subhead">A quiet publication for essays, interviews, and long-form journalism. No feeds. No metrics. Just prose worth the afternoon.</p>
+    <div class="hero-actions">
+      <a href="#" class="btn-primary">Begin Reading</a>
+      <a href="#" class="btn-secondary">Browse the archive →</a>
+    </div>
+  </section>
+
+  <section class="trusted">
+    <div class="trusted-label">Featured in</div>
+    <div class="trusted-row">
+      <span>The Paris Letter</span>
+      <span>Foundry Weekly</span>
+      <span>Linden Review</span>
+      <span>Cairn &amp; Co.</span>
+      <span>Hollow Press</span>
+    </div>
+  </section>
+</body>
+</html>

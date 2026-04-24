@@ -58,15 +58,15 @@ export default function PromptBar() {
 
   return (
     <div className="absolute left-1/2 bottom-4 -translate-x-1/2 z-30 w-[min(720px,calc(100%-32px))]">
-      <div className="bg-zinc-950/90 backdrop-blur border border-zinc-800 rounded-xl shadow-2xl overflow-hidden">
+      <div className="bg-stone-50/90 backdrop-blur border border-zinc-200 rounded-xl shadow-2xl overflow-hidden">
         <div className="flex items-center justify-between px-3 pt-2 pb-1.5 text-[11px]">
-          <div className="flex items-center gap-1.5 text-zinc-400">
+          <div className="flex items-center gap-1.5 text-zinc-500">
             <Target className="w-3 h-3" />
             <span>Targeting:</span>
             <span
               className={clsx(
                 "font-medium truncate max-w-[220px]",
-                target ? "text-amber-300" : "text-zinc-600"
+                target ? "text-amber-600" : "text-zinc-400"
               )}
             >
               {target?.title || "— pick a node or click the canvas"}
@@ -74,7 +74,7 @@ export default function PromptBar() {
           </div>
           <button
             onClick={() => setExpanded((v) => !v)}
-            className="text-zinc-500 hover:text-zinc-200"
+            className="text-zinc-500 hover:text-zinc-800"
             title={expanded ? "Collapse" : "Expand"}
           >
             {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
@@ -94,7 +94,7 @@ export default function PromptBar() {
                     ? `Ask Atelier to change "${target.title?.slice(0, 40) || "this node"}"… (Enter to send)`
                     : "Click a node on the canvas first, then type what to change"
                 }
-                className="flex-1 resize-none bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                className="flex-1 resize-none bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/40"
                 disabled={running || !target}
               />
               <button
@@ -113,7 +113,7 @@ export default function PromptBar() {
                   key={c}
                   onClick={() => setPrompt(c)}
                   disabled={running || !target}
-                  className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 hover:border-zinc-600 disabled:opacity-40"
+                  className="text-[11px] px-2 py-0.5 rounded-full bg-white border border-zinc-200 text-zinc-500 hover:text-zinc-900 hover:border-zinc-400 disabled:opacity-40"
                 >
                   {c}
                 </button>
@@ -121,12 +121,12 @@ export default function PromptBar() {
             </div>
 
             {error && (
-              <div className="mt-2 text-[11px] text-rose-400 bg-rose-950/40 border border-rose-900 rounded px-2 py-1">
+              <div className="mt-2 text-[11px] text-rose-400 bg-rose-50 border border-rose-300 rounded px-2 py-1">
                 {error}
               </div>
             )}
 
-            <div className="mt-2 px-0.5 text-[10px] text-zinc-600">
+            <div className="mt-2 px-0.5 text-[10px] text-zinc-400">
               Tip: drag any node onto another to combine their styles with Opus.
             </div>
           </div>

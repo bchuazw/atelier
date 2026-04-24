@@ -41,11 +41,11 @@ export default function ContextPanel() {
   const dirty = (project?.context ?? "") !== draft;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl flex flex-col max-h-[80vh]">
-        <div className="flex items-center justify-between p-4 border-b border-zinc-800">
+    <div className="fixed inset-0 z-50 bg-zinc-900/40 flex items-center justify-center p-4">
+      <div className="w-full max-w-2xl bg-stone-50 border border-zinc-200 rounded-xl shadow-2xl flex flex-col max-h-[80vh]">
+        <div className="flex items-center justify-between p-4 border-b border-zinc-200">
           <div className="flex items-center gap-2">
-            <BookOpen className="w-5 h-5 text-sky-400" />
+            <BookOpen className="w-5 h-5 text-sky-500" />
             <div>
               <h2 className="text-base font-medium">Project context</h2>
               <p className="text-[11px] text-zinc-500">
@@ -54,7 +54,7 @@ export default function ContextPanel() {
               </p>
             </div>
           </div>
-          <button onClick={closeContextPanel} className="text-zinc-400 hover:text-zinc-100">
+          <button onClick={closeContextPanel} className="text-zinc-500 hover:text-zinc-900">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -67,7 +67,7 @@ export default function ContextPanel() {
               setSaved(false);
             }}
             placeholder={PLACEHOLDER}
-            className="w-full min-h-[320px] bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-sky-500/40 font-mono"
+            className="w-full min-h-[320px] bg-white border border-zinc-200 rounded-lg px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-sky-500/40 font-mono"
             disabled={saving}
           />
           <div className="mt-2 text-[11px] text-zinc-500">
@@ -75,7 +75,7 @@ export default function ContextPanel() {
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-2 p-4 border-t border-zinc-800 bg-zinc-950/60">
+        <div className="flex items-center justify-between gap-2 p-4 border-t border-zinc-200 bg-stone-50/60">
           <div className="text-[11px] text-zinc-500">
             {saved && !dirty
               ? "Saved. Will be used on the next fork."
@@ -87,7 +87,7 @@ export default function ContextPanel() {
             <button
               onClick={closeContextPanel}
               disabled={saving}
-              className="px-3 py-1.5 text-sm text-zinc-400 hover:text-zinc-100"
+              className="px-3 py-1.5 text-sm text-zinc-500 hover:text-zinc-900"
             >
               Close
             </button>

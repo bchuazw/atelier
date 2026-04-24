@@ -1,0 +1,284 @@
+<!-- Template: Aster — vintage travel poster, mustard + forest + burnt orange -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Aster — Slow trips. Good maps.</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@400;500;700&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: #f2e8cf;
+    color: #1f2e20;
+    font-family: 'DM Sans', sans-serif;
+    line-height: 1.55;
+  }
+  :root {
+    --cream: #f2e8cf;
+    --mustard: #d8a93e;
+    --forest: #1f4d32;
+    --forest-deep: #15331f;
+    --burnt: #c45527;
+    --ink: #1f2e20;
+  }
+
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: var(--forest-deep);
+    color: var(--cream);
+    border-bottom: 4px solid var(--mustard);
+  }
+  .nav-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 16px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .logo {
+    font-family: 'DM Serif Display', serif;
+    font-size: 26px;
+    letter-spacing: 0.02em;
+    color: var(--mustard);
+  }
+  .logo::before {
+    content: '✷';
+    margin-right: 8px;
+    color: var(--burnt);
+  }
+  .nav-links {
+    display: flex;
+    gap: 28px;
+    list-style: none;
+  }
+  .nav-links a {
+    color: var(--cream);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    border-bottom: 2px solid transparent;
+    padding-bottom: 2px;
+  }
+  .nav-links a:hover { border-color: var(--mustard); }
+  .cta-small {
+    background: var(--burnt);
+    color: var(--cream);
+    border: none;
+    padding: 10px 18px;
+    font-family: inherit;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .hero-wrap {
+    padding: 36px 28px;
+  }
+  .hero {
+    max-width: 1200px;
+    margin: 0 auto;
+    border: 8px solid var(--forest);
+    padding: 64px 48px;
+    position: relative;
+    background:
+      repeating-linear-gradient(45deg, transparent, transparent 14px, rgba(31, 77, 50, 0.05) 14px, rgba(31, 77, 50, 0.05) 28px),
+      var(--cream);
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    inset: 8px;
+    border: 2px solid var(--mustard);
+    pointer-events: none;
+  }
+  .hero-grid {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 48px;
+    align-items: center;
+  }
+  .badge {
+    display: inline-block;
+    background: var(--mustard);
+    color: var(--forest-deep);
+    padding: 5px 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    font-weight: 700;
+    margin-bottom: 24px;
+  }
+  h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: clamp(44px, 7vw, 88px);
+    line-height: 0.98;
+    color: var(--forest-deep);
+    margin-bottom: 24px;
+    letter-spacing: -0.01em;
+  }
+  h1 em {
+    color: var(--burnt);
+    font-style: italic;
+  }
+  .subhead {
+    font-size: 18px;
+    color: var(--ink);
+    max-width: 480px;
+    margin-bottom: 36px;
+    line-height: 1.55;
+  }
+  .hero-actions {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .btn-primary {
+    background: var(--forest);
+    color: var(--cream);
+    padding: 14px 28px;
+    text-decoration: none;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-weight: 700;
+    border: 3px solid var(--forest);
+  }
+  .btn-primary:hover { background: var(--forest-deep); }
+  .btn-secondary {
+    color: var(--forest);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    border-bottom: 3px solid var(--burnt);
+    padding-bottom: 2px;
+  }
+
+  .stamp {
+    aspect-ratio: 1 / 1.25;
+    background: var(--forest);
+    color: var(--mustard);
+    border: 6px solid var(--mustard);
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transform: rotate(-3deg);
+    box-shadow: 6px 6px 0 var(--burnt);
+  }
+  .stamp-top {
+    font-family: 'DM Serif Display', serif;
+    font-style: italic;
+    font-size: 18px;
+    color: var(--cream);
+  }
+  .stamp-mid {
+    font-family: 'DM Serif Display', serif;
+    font-size: 44px;
+    line-height: 1;
+    color: var(--mustard);
+    text-align: center;
+  }
+  .stamp-bot {
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--cream);
+    text-align: right;
+  }
+
+  .trusted {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 40px 28px 80px;
+    text-align: center;
+    border-top: 2px dashed var(--forest);
+  }
+  .trusted-label {
+    font-family: 'DM Serif Display', serif;
+    font-style: italic;
+    font-size: 18px;
+    color: var(--forest);
+    margin: 32px 0 24px;
+  }
+  .trusted-row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 40px;
+  }
+  .trusted-row span {
+    font-family: 'DM Serif Display', serif;
+    font-size: 20px;
+    color: var(--forest-deep);
+    letter-spacing: 0.01em;
+  }
+
+  @media (max-width: 768px) {
+    .nav-links { display: none; }
+    .hero { padding: 36px 24px; }
+    .hero-grid { grid-template-columns: 1fr; }
+    .stamp { max-width: 240px; margin: 0 auto; }
+  }
+</style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <div class="logo">Aster &amp; Co.</div>
+      <ul class="nav-links">
+        <li><a href="#">Routes</a></li>
+        <li><a href="#">Journal</a></li>
+        <li><a href="#">Gear Shop</a></li>
+        <li><a href="#">About</a></li>
+      </ul>
+      <button class="cta-small">Plan a Trip</button>
+    </div>
+  </nav>
+
+  <div class="hero-wrap">
+    <section class="hero">
+      <div class="hero-grid">
+        <div>
+          <div class="badge">Est. 1974 · Spring Catalogue</div>
+          <h1>Slow trips.<br><em>Good maps.</em></h1>
+          <p class="subhead">Hand-drawn routes for travellers who prefer the long way around. Ferry crossings, night trains, and mountain huts we actually slept in.</p>
+          <div class="hero-actions">
+            <a href="#" class="btn-primary">Browse Routes</a>
+            <a href="#" class="btn-secondary">Read the Journal →</a>
+          </div>
+        </div>
+        <div class="stamp">
+          <div class="stamp-top">From</div>
+          <div class="stamp-mid">The Dolomites,<br>by rail.</div>
+          <div class="stamp-bot">No. 042 / Spring</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="trusted">
+    <div class="trusted-label">As recommended by</div>
+    <div class="trusted-row">
+      <span>Alpine Quarterly</span>
+      <span>The Ridgeline</span>
+      <span>Haversack</span>
+      <span>Oxbow Press</span>
+      <span>Tinderbox</span>
+    </div>
+  </section>
+</body>
+</html>

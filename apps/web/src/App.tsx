@@ -36,11 +36,11 @@ export default function App() {
   }, []);
 
   return (
-    <div className="flex flex-col h-full w-full bg-zinc-950 text-zinc-100">
+    <div className="flex flex-col h-full w-full bg-stone-50 text-zinc-900">
       <TopBar onNewProject={() => setNewProjectOpen(true)} />
 
       {statusWarning && (
-        <div className="px-4 py-1.5 bg-rose-950/60 border-b border-rose-900 text-[12px] text-rose-300">
+        <div className="px-4 py-1.5 bg-rose-100 border-b border-rose-300 text-[12px] text-rose-600">
           {statusWarning}
         </div>
       )}
