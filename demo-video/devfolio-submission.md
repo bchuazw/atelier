@@ -206,22 +206,30 @@ Will resume before submission publish.)*
 Single-track hackathon — no per-track pitch required. The `tracksToApplyTo`
 array gets one entry for the `5e75ce5782bb48e49034bf8ec94033f3` UUID.
 
+## Cover image (`cover_img`)
+
+Upload `docs/screenshots/cover.png` — 1920×1080 PNG, Atelier-branded,
+Cormorant serif headline "Branch every critique. *Cite every source.*"
++ real Critics dialog + real 4-node canvas screenshots + "Built on
+Claude · Grounded with Genspark" footer. Source HTML preserved at
+`docs/cover-source/cover.html` for future re-renders.
+
 ## Gallery (pictures) — ≤6 real screenshots
 
 In priority order (headline shot first so it's the thumbnail):
 
-1. `grounded-critics-live.png` — Critics dialog with "GROUNDED IN 3
+1. `canvas-with-merge.png` — Full 4-node DAG: seed → two Claude
+   variants → Opus-merged child, with both dashed magenta merge edges
+   clearly labeled. Shows the whole branching paradigm in one glance.
+2. `grounded-critics-live.png` — Critics dialog with "GROUNDED IN 3
    REFERENCES VIA GENSPARK" banner + citation chips + Claude's
-   hex-coded suggestions. **This is the sponsor-showcase shot.**
-2. `viewer-side-by-side.png` — Full-page side-by-side comparing the
-   warm-minimal "Plume" seed vs the dark-editorial-luxury variant
-   produced by the grounded critic run.
-3. `canvas-two-nodes.png` — Canvas with both nodes + the Compare button
-   clearly visible on the seed card (discoverable Compare flow).
-4. `ux-fixes-new-project.png` — Template picker with the 6 curated
+   hex-coded suggestions. **Sponsor-showcase shot.**
+3. `feedback-autoreason.png` — Stakeholder Feedback dialog with Sonnet
+   decomposing a paragraph into 6 atomic category-tagged changes.
+4. `viewer-side-by-side.png` — Full-page Side-by-Side viewer comparing
+   the warm-minimal "Plume" seed vs the grounded-critics luxury variant.
+5. `ux-fixes-new-project.png` — Template picker with 6 curated
    aesthetics, vibe chips (PREMIUM / BRUTALIST / CALM / FUTURISTIC),
    and the disabled-Create helper text.
-5. `after-critics-apply.png` — Split-view showing the dramatic
-   before-vs-after of grounded-critic apply.
 
 All real Playwright captures, no AI generation.
