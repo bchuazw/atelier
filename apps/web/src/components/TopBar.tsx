@@ -1,0 +1,154 @@
+import { useState } from "react";
+import { Palette, Plus, Trash2, RefreshCw, BookOpen, Anchor, ArchiveRestore } from "lucide-react";
+import clsx from "clsx";
+import { api } from "@/lib/api";
+import { useUI } from "@/lib/store";
+
+export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
+  const {
+    project,
+    setTree,
+    openViewer,
+    compare,
+    nodes,
+    openContextPanel,
+    includeArchived,
+    setIncludeArchived,
+  } = useUI();
+  const [refreshing, setRefreshing] = useState(false);
+
+  async function refresh(nextIncludeArchived = includeArchived) {
+    if (!project) return;
+    setRefreshing(true);
+    try {
+      const tree = await api.getTree(project.id, nextIncludeArchived);
+      setTree(tree.project, tree.nodes, tree.edges);
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  async function del() {
+    if (!project) return;
+    if (!confirm(`Delete project "${project.name}"?`)) return;
+    await api.deleteProject(project.id);
+    setTree(null, [], []);
+  }
+
+  async function clearCheckpoint() {
+    if (!project) return;
+    await api.patchProject(project.id, { clear_checkpoint: true });
+    setIncludeArchived(false);
+    await refresh(false);
+  }
+
+  async function toggleArchived() {
+    const next = !includeArchived;
+    setIncludeArchived(next);
+    await refresh(next);
+  }
+
+  const canCompare = compare.a && compare.b;
+  const archivedCount = project?.archived_count ?? 0;
+  const hasCheckpoint = !!project?.active_checkpoint_id;
+
+  return (
+    <>
+      <div className="flex items-center justify-between px-4 py-2 bg-zinc-950 border-b border-zinc-800 h-12">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 font-semibold text-zinc-100">
+            <Palette className="w-5 h-5 text-amber-400" />
+            Atelier
+          </div>
+          <div className="w-px h-5 bg-zinc-800" />
+          <div className="text-sm">
+            {project ? (
+              <>
+                <span className="text-zinc-400">Project:</span>{" "}
+                <span className="text-zinc-100 font-medium">{project.name}</span>
+                {project.seed_url && (
+                  <span className="text-zinc-500 text-[11px] ml-2 font-mono">{project.seed_url}</span>
+                )}
+              </>
+            ) : (
+              <span className="text-zinc-500">No project loaded</span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 text-sm">
+          <div className="text-[11px] text-zinc-500 mr-2">{nodes.length} nodes</div>
+          {canCompare && (
+            <button
+              onClick={openViewer}
+              className="flex items-center gap-1 px-2.5 py-1 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-medium text-xs"
+            >
+              Open Before/After
+            </button>
+          )}
+          {project && (
+            <>
+              <button
+                onClick={openContextPanel}
+                className="flex items-center gap-1 px-2.5 py-1 rounded bg-sky-600/20 hover:bg-sky-600/40 text-sky-200 text-xs"
+                title="Edit project context — preferences the agent reads before every fork"
+              >
+                <BookOpen className="w-3.5 h-3.5" /> Context
+                {project.context && project.context.length > 0 && (
+                  <span className="ml-1 w-1.5 h-1.5 rounded-full bg-sky-400" />
+                )}
+              </button>
+              <button
+                onClick={() => refresh()}
+                className={clsx("p-1.5 rounded hover:bg-zinc-800", refreshing && "animate-spin")}
+                title="Refresh tree"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+              <button onClick={del} className="p-1.5 rounded hover:bg-zinc-800 text-rose-400" title="Delete project">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </>
+          )}
+          <button
+            onClick={onNewProject}
+            className="flex items-center gap-1 px-2.5 py-1 rounded bg-amber-500 hover:bg-amber-400 text-black font-medium text-xs"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            New project
+          </button>
+        </div>
+      </div>
+
+      {project && hasCheckpoint && (
+        <div className="px-4 py-1.5 bg-fuchsia-950/40 border-b border-fuchsia-900/60 text-[12px] text-fuchsia-200 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Anchor className="w-3.5 h-3.5" />
+            <span>
+              <span className="font-medium">Checkpoint active.</span>{" "}
+              {includeArchived
+                ? `Showing all ${project.total_count ?? nodes.length} nodes (including ${archivedCount} archived).`
+                : `${archivedCount} older node${archivedCount === 1 ? "" : "s"} archived for speed.`}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={toggleArchived}
+              className="flex items-center gap-1 px-2 py-0.5 rounded bg-fuchsia-500/20 hover:bg-fuchsia-500/40 text-fuchsia-100 text-[11px]"
+            >
+              <ArchiveRestore className="w-3 h-3" />
+              {includeArchived ? "Hide archived" : "Show archived"}
+            </button>
+            <button
+              onClick={clearCheckpoint}
+              className="px-2 py-0.5 rounded text-fuchsia-200 hover:bg-fuchsia-500/20 text-[11px]"
+              title="Remove the checkpoint — restores the full tree as the active view"
+            >
+              Clear checkpoint
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}

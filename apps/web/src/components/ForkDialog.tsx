@@ -1,0 +1,231 @@
+import { useEffect, useState } from "react";
+import { X, Sparkles, Loader2, Swords } from "lucide-react";
+import clsx from "clsx";
+import { api } from "@/lib/api";
+import { useUI } from "@/lib/store";
+
+const MODELS = [
+  { id: "haiku", label: "Haiku 4.5", hint: "fastest, cheapest" },
+  { id: "sonnet", label: "Sonnet 4.6", hint: "balanced" },
+  { id: "opus", label: "Opus 4.7", hint: "best quality" },
+];
+
+const PRESETS = [
+  "Make it warmer and more playful",
+  "Bolder headline, stronger CTA above the fold",
+  "Cleaner, more minimalist spacing",
+  "Higher contrast, more accessible",
+  "Modernize the typography",
+];
+
+export default function ForkDialog() {
+  const { forkDialogOpen, forkParentId, closeFork, nodes, openViewer, setCompareA, setCompareB, includeArchived } = useUI();
+  const [prompt, setPrompt] = useState("");
+  const [model, setModel] = useState("sonnet");
+  const [n, setN] = useState(1);
+  const [shootout, setShootout] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!forkDialogOpen) {
+      setPrompt("");
+      setError(null);
+      setRunning(false);
+      setShootout(false);
+    }
+  }, [forkDialogOpen]);
+
+  if (!forkDialogOpen || !forkParentId) return null;
+
+  const parent = nodes.find((x) => x.id === forkParentId);
+
+  async function submit() {
+    if (!prompt.trim() || !forkParentId) return;
+    setRunning(true);
+    setError(null);
+    try {
+      const children = await api.fork(forkParentId, prompt.trim(), model, n, shootout);
+      // Pull the fresh tree to get positions/metadata right.
+      const proj = useUI.getState().project;
+      if (proj) {
+        const tree = await api.getTree(proj.id, includeArchived);
+        useUI.getState().setTree(tree.project, tree.nodes, tree.edges);
+      }
+      if (children[0]) {
+        setCompareA(forkParentId);
+        setCompareB(children[0].node_id);
+        openViewer();
+      }
+      closeFork();
+    } catch (e: any) {
+      setError(e?.message || "Fork failed");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  const effectiveCount = shootout ? 3 : n;
+  const ctaLabel = shootout ? "Run shootout (3 models)" : `Fork ${n}×`;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+      <div className="w-full max-w-2xl bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl">
+        <div className="flex items-center justify-between p-4 border-b border-zinc-800">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-amber-400" />
+            <div>
+              <h2 className="text-base font-medium">Fork from {parent?.title || "node"}</h2>
+              <p className="text-[11px] text-zinc-500">
+                Describe a change. The LLM will produce a variant; the canvas will branch.
+              </p>
+            </div>
+          </div>
+          <button onClick={closeFork} className="text-zinc-400 hover:text-zinc-100">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          <div>
+            <label className="text-xs text-zinc-400 mb-1.5 block">Prompt</label>
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              rows={4}
+              placeholder="e.g., make the hero warmer and more playful, enlarge the CTA button…"
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+              disabled={running}
+              autoFocus
+            />
+            <div className="flex flex-wrap gap-1 mt-2">
+              {PRESETS.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPrompt(p)}
+                  disabled={running}
+                  className="text-[11px] px-2 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 hover:border-zinc-600"
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Model shootout toggle: same prompt, three models, three sibling variants. */}
+          <button
+            type="button"
+            onClick={() => setShootout((v) => !v)}
+            disabled={running}
+            className={clsx(
+              "w-full flex items-start gap-3 px-3 py-2.5 rounded-lg border text-left transition",
+              shootout
+                ? "bg-fuchsia-500/10 border-fuchsia-500/60"
+                : "bg-zinc-900 border-zinc-800 hover:border-zinc-600"
+            )}
+          >
+            <Swords className={clsx("w-4 h-4 mt-0.5", shootout ? "text-fuchsia-300" : "text-zinc-500")} />
+            <div className="flex-1">
+              <div className={clsx("text-sm font-medium", shootout ? "text-fuchsia-100" : "text-zinc-200")}>
+                Model shootout
+              </div>
+              <div className="text-[11px] text-zinc-400">
+                Runs the same prompt on Haiku + Sonnet + Opus in parallel. Three sibling variants on the canvas.
+              </div>
+            </div>
+            <div
+              className={clsx(
+                "text-[10px] px-1.5 py-0.5 rounded border",
+                shootout
+                  ? "bg-fuchsia-500 text-black border-fuchsia-400"
+                  : "text-zinc-500 border-zinc-700"
+              )}
+            >
+              {shootout ? "ON" : "OFF"}
+            </div>
+          </button>
+
+          <div className={clsx("grid grid-cols-2 gap-4 transition", shootout && "opacity-40 pointer-events-none")}>
+            <div>
+              <label className="text-xs text-zinc-400 mb-1.5 block">Model</label>
+              <div className="flex gap-1">
+                {MODELS.map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => setModel(m.id)}
+                    disabled={running || shootout}
+                    className={clsx(
+                      "flex-1 px-2 py-1.5 rounded text-xs border",
+                      model === m.id
+                        ? "bg-amber-500/20 border-amber-500 text-amber-200"
+                        : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-600"
+                    )}
+                    title={m.hint}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs text-zinc-400 mb-1.5 block">Variants</label>
+              <div className="flex gap-1">
+                {[1, 2, 3].map((k) => (
+                  <button
+                    key={k}
+                    onClick={() => setN(k)}
+                    disabled={running || shootout}
+                    className={clsx(
+                      "flex-1 px-2 py-1.5 rounded text-xs border",
+                      n === k
+                        ? "bg-amber-500/20 border-amber-500 text-amber-200"
+                        : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-600"
+                    )}
+                  >
+                    {k}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {error && (
+            <div className="text-xs text-rose-400 bg-rose-950/40 border border-rose-900 rounded px-3 py-2">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-2 p-4 border-t border-zinc-800 bg-zinc-950/60">
+          <div className="text-[11px] text-zinc-500">
+            Generating {effectiveCount} variant{effectiveCount === 1 ? "" : "s"} in parallel
+            {shootout && " — one per model"}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={closeFork}
+              disabled={running}
+              className="px-3 py-1.5 text-sm text-zinc-400 hover:text-zinc-100"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={submit}
+              disabled={running || !prompt.trim()}
+              className={clsx(
+                "flex items-center gap-1.5 px-4 py-1.5 text-sm rounded font-medium disabled:opacity-50",
+                shootout
+                  ? "bg-fuchsia-500 hover:bg-fuchsia-400 text-black"
+                  : "bg-amber-500 hover:bg-amber-400 text-black"
+              )}
+            >
+              {running ? <Loader2 className="w-4 h-4 animate-spin" /> : shootout ? <Swords className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
+              {running ? "Generating…" : ctaLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

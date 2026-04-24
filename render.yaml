@@ -1,0 +1,82 @@
+# Atelier — Render Blueprint (Infrastructure-as-Code).
+# Three services: a FastAPI backend, the Vite SPA (static), and a tiny Node
+# sandbox-server that proxies variant iframes from Supabase Storage with the
+# correct Content-Type (Supabase forces text/plain on HTML uploads otherwise,
+# which breaks iframe rendering). Postgres + object storage live in Supabase.
+#
+# See PLAN.md §23 for the full architecture and §25.2 for the deploy runbook.
+# Services in this blueprint are created via the Render API at deploy time;
+# commit this file for reference + future dashboard re-sync.
+
+services:
+  - type: web
+    name: atelier-api
+    runtime: python
+    plan: free
+    region: oregon
+    rootDir: apps/api
+    buildCommand: pip install .
+    startCommand: uvicorn atelier_api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.10
+      - key: ATELIER_STORAGE_MODE
+        value: supabase
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: MINIMAX_API_KEY
+        sync: false                # leave empty to keep mock-mode in prod
+      - key: ATELIER_DB_URL
+        sync: false                # postgresql+asyncpg://postgres:<pwd>@db.<proj>.supabase.co:5432/postgres
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false                # service_role key (NOT anon)
+      - key: SUPABASE_BUCKET
+        value: variants
+      - key: ATELIER_SANDBOX_PUBLIC_URL
+        sync: false                # https://atelier-sandbox.onrender.com
+      - key: ATELIER_ALLOWED_ORIGINS
+        sync: false                # https://atelier-web.onrender.com
+
+  - type: web
+    name: atelier-sandbox
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: sandbox-server
+    buildCommand: echo "no build step — stdlib-only Node"
+    startCommand: node server.js
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: ATELIER_SANDBOX_MODE
+        value: proxy
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_BUCKET
+        value: variants
+      - key: ATELIER_WEB_ORIGIN
+        sync: false                # https://atelier-web.onrender.com
+
+  - type: web
+    name: atelier-web
+    runtime: static
+    region: oregon
+    rootDir: apps/web
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    autoDeploy: true
+    envVars:
+      - key: VITE_API_BASE
+        sync: false                # https://atelier-api.onrender.com/api/v1
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: public, max-age=0, must-revalidate

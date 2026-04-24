@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* React Flow background dots — subtle on dark */
+.react-flow__background {
+  background-color: #09090b;
+}
+.react-flow__node {
+  border-radius: 12px;
+}
+.react-flow__edge-path {
+  stroke: #52525b;
+  stroke-width: 1.5;
+}
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge:focus .react-flow__edge-path {
+  stroke: #f59e0b;
+  stroke-width: 2;
+}
+.react-flow__handle {
+  background: #52525b;
+  width: 8px;
+  height: 8px;
+  border: none;
+}
+.react-flow__controls {
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.react-flow__controls-button {
+  background: #18181b;
+  border-bottom: 1px solid #27272a;
+  color: #d4d4d8;
+}
+.react-flow__controls-button:hover {
+  background: #27272a;
+}
+.react-flow__minimap {
+  background: #18181b !important;
+  border: 1px solid #27272a;
+  border-radius: 8px;
+}

@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/components/beforeafterviewer.tsx","./src/components/canvas.tsx","./src/components/contextpanel.tsx","./src/components/emptystate.tsx","./src/components/forkdialog.tsx","./src/components/newprojectdialog.tsx","./src/components/topbar.tsx","./src/components/variantnode.tsx","./src/lib/api.ts","./src/lib/store.ts"],"version":"5.9.3"}

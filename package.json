@@ -1,0 +1,14 @@
+{
+  "name": "atelier",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "bash scripts/dev.sh",
+    "dev:web": "cd apps/web && npm run dev",
+    "dev:api": "cd apps/api && python -m uvicorn atelier_api.main:app --reload --port 8000",
+    "dev:sandbox": "cd sandbox-server && node server.js",
+    "install:web": "cd apps/web && npm install",
+    "install:api": "cd apps/api && pip install -e .",
+    "install:all": "npm run install:web && npm run install:api"
+  }
+}
