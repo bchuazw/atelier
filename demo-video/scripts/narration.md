@@ -1,4 +1,4 @@
-# Narration script (~45 seconds spoken over 2 minutes of visuals)
+# Narration script (Cycle 7 — ~200 words over 2 minutes)
 
 Calm, confident, product-marketing voice. Pauses are intentional —
 don't fill every visual beat with words.
@@ -6,29 +6,34 @@ don't fill every visual beat with words.
 ---
 
 **[0:00] (title card)**
-Atelier — an infinite canvas for iterative frontend craft.
+Most design feedback gets lost between a screenshot, a paragraph, and a
+guess. Atelier turns every critique into a branch you can see, compare,
+and keep.
 
-**[0:12] (templates)**
-Start from a template, a URL, or paste your own HTML. Every project
-begins as a node on the whiteboard.
+**[0:08] (templates)**
+Start from a seed — paste your own HTML, point at a URL, or pick one of
+six curated aesthetics. Here's Warm Minimal.
 
-**[0:28] (critics)**
-Name the vibe you're going for. Claude critiques the variant
-and suggests concrete, ranked changes — you approve, it applies.
+**[0:22] (grounded critics)**
+Now the move. Pick a target vibe — premium luxury — and ask Atelier to
+ground the critique in real examples. Genspark pulls three live landing
+pages. Claude reads them and returns suggestions that cite the actual
+sites. Not "use a more premium palette" — specifically the Aesop-style
+parchment over burnished gold. Approve, apply, and the variant lands as
+a child on the canvas.
 
-**[0:50] (two fonts + before/after)**
-Prompt the canvas for two font directions. Drag the slider to
-compare them side by side.
+**[0:55] (compare)**
+Click Compare on one node, click Compare on another, and both pages open
+side by side, full-size. Swap to mobile with a keystroke.
 
-**[1:14] (drag-to-combine)**
-Like the typography of one, the layout of another? Drag one node
-onto the other. Opus synthesizes a combined variant.
+**[1:18] (prompt)**
+Every node has a prompt bar. Ask Sonnet for a serif headline — the
+rewrite streams in place, and the new branch threads in.
 
-**[1:34] (feedback)**
-When the real feedback lands — a dense paragraph from your boss —
-paste it whole. Atelier decomposes it, you approve, one rewrite
-ships all the changes at once.
+**[1:35] (merge)**
+Like two variants for different reasons? Drag one onto the other. Opus
+merges them — a new branch, edges showing where each parent contributed.
 
-**[1:56] (outro)**
-Atelier. Claude, MiniMax, ElevenLabs — stitched on a whiteboard.
-Link in the description.
+**[1:50] (outro)**
+Atelier. Every round of design, branched and kept. Built on Claude,
+grounded with Genspark, hero media by MiniMax.

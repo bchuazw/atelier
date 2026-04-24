@@ -78,12 +78,19 @@ export default function NewProjectDialog({
     }
   }
 
-  const canSubmit =
-    !!name.trim() &&
-    ((mode === "url" && (!url.trim() || /^https?:\/\//.test(url.trim()))) ||
-      (mode === "html" && html.trim().length > 0) ||
-      (mode === "template" && !!selectedTemplateId) ||
-      (mode === "url" && !url.trim())); // allow blank URL → hello-world
+  // Spell out why Create is disabled so users aren't stuck wondering. A new
+  // user on first visit sees the placeholder "Landing page polish" and
+  // thinks the name is already filled in — the explicit hint fixes that.
+  const disabledReason = !name.trim()
+    ? "Give the project a name first."
+    : mode === "template" && !selectedTemplateId
+    ? "Pick one of the templates above."
+    : mode === "html" && !html.trim()
+    ? "Paste some HTML (or switch to a Template / URL)."
+    : mode === "url" && url.trim() && !/^https?:\/\//.test(url.trim())
+    ? "URL must start with http:// or https://"
+    : "";
+  const canSubmit = !disabledReason;
 
   return (
     <div className="fixed inset-0 z-50 bg-zinc-900/40 flex items-center justify-center p-4">
@@ -176,7 +183,14 @@ export default function NewProjectDialog({
                           />
                         </div>
                         <div className="p-2.5">
-                          <div className="text-sm font-medium text-zinc-900">{t.name}</div>
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <div className="text-sm font-medium text-zinc-900">{t.name}</div>
+                            {t.vibe && (
+                              <span className="text-[10px] uppercase tracking-wider font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
+                                {t.vibe}
+                              </span>
+                            )}
+                          </div>
                           <div className="text-[11px] text-zinc-500 leading-snug line-clamp-2">
                             {t.tagline}
                           </div>
@@ -227,7 +241,10 @@ export default function NewProjectDialog({
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 p-4 border-t border-zinc-200 bg-stone-50/60">
+        <div className="flex items-center justify-between gap-2 p-4 border-t border-zinc-200 bg-stone-50/60">
+          <div className="text-[11px] text-zinc-500 flex-1 min-w-0 truncate">
+            {disabledReason || "Ready — Claude will prep the seed in a few seconds."}
+          </div>
           <button
             onClick={onClose}
             disabled={running}
@@ -238,6 +255,7 @@ export default function NewProjectDialog({
           <button
             onClick={submit}
             disabled={running || !canSubmit}
+            title={disabledReason || undefined}
             className="flex items-center gap-1.5 px-4 py-1.5 text-sm rounded bg-amber-500 hover:bg-amber-400 text-black font-medium disabled:opacity-50"
           >
             {running && <Loader2 className="w-4 h-4 animate-spin" />}

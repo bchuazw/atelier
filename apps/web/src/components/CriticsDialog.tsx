@@ -262,7 +262,7 @@ export default function CriticsDialog() {
                   </div>
                   <div className="text-[11px] text-zinc-500 leading-snug mt-0.5">
                     Pulls 3 real landing pages matching the theme + asks Claude
-                    to reference specific observed elements. Adds ~10–20s.
+                    to reference specific observed elements. Adds ~20–40s.
                   </div>
                 </div>
               </label>

@@ -156,6 +156,10 @@ export type TemplateManifestEntry = {
   name: string;
   tagline: string;
   file: string;
+  // One-word vibe tag (e.g. "Premium", "Playful"). Added in Cycle 7 after
+  // new users couldn't tell at a glance which template mapped to which
+  // aesthetic ambition — templates.json now ships this field.
+  vibe?: string;
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

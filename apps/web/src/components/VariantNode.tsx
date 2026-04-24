@@ -46,6 +46,7 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
     compare,
     openViewer,
     setTree,
+    setSelected,
     includeArchived,
   } = useUI();
 
@@ -69,6 +70,7 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
 
   return (
     <div
+      onClick={() => setSelected(node.id)}
       className={clsx(
         "relative w-[260px] rounded-xl ring-1 shadow-lg transition text-zinc-900 overflow-hidden",
         typeStyles[node.type] || "ring-zinc-700 bg-white",
