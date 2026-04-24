@@ -7,6 +7,7 @@ import BeforeAfterViewer from "./components/BeforeAfterViewer";
 import NewProjectDialog from "./components/NewProjectDialog";
 import EmptyState from "./components/EmptyState";
 import ContextPanel from "./components/ContextPanel";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { useUI } from "./lib/store";
 import { api } from "./lib/api";
 
@@ -21,12 +22,14 @@ export default function App() {
       .then((s) => {
         if (!s.has_api_key) {
           setStatusWarning(
-            "No ANTHROPIC_API_KEY configured. Forking will fail until you set one in .env.local."
+            "No ANTHROPIC_API_KEY configured. Forking will fail until you set one in .env.local (or via POST /api/v1/settings/api-key)."
           );
         }
       })
       .catch(() => {
-        setStatusWarning("Backend not reachable on :8000. Start `atelier-api`.");
+        setStatusWarning(
+          "Backend not reachable. The API service may be waking from a cold start — try again in 20-30s."
+        );
       });
   }, []);
 
@@ -41,7 +44,9 @@ export default function App() {
       )}
 
       <div className="flex-1 relative">
-        {project ? <Canvas /> : <EmptyState onNewProject={() => setNewProjectOpen(true)} />}
+        <ErrorBoundary>
+          {project ? <Canvas /> : <EmptyState onNewProject={() => setNewProjectOpen(true)} />}
+        </ErrorBoundary>
       </div>
 
       <NewProjectDialog open={newProjectOpen} onClose={() => setNewProjectOpen(false)} />

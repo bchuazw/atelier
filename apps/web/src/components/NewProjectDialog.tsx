@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
-import { X, Loader2, Globe } from "lucide-react";
+import { X, Loader2, Globe, Code } from "lucide-react";
+import clsx from "clsx";
 import { api } from "@/lib/api";
 import { useUI } from "@/lib/store";
+
+type SeedMode = "url" | "html";
 
 export default function NewProjectDialog({
   open,
@@ -12,14 +15,18 @@ export default function NewProjectDialog({
 }) {
   const { setTree } = useUI();
   const [name, setName] = useState("");
+  const [mode, setMode] = useState<SeedMode>("url");
   const [url, setUrl] = useState("");
+  const [html, setHtml] = useState("");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
       setName("");
+      setMode("url");
       setUrl("");
+      setHtml("");
       setError(null);
       setRunning(false);
     }
@@ -32,7 +39,11 @@ export default function NewProjectDialog({
     setRunning(true);
     setError(null);
     try {
-      const project = await api.createProject(name.trim(), url.trim() || undefined);
+      const project = await api.createProject({
+        name: name.trim(),
+        seed_url: mode === "url" && url.trim() ? url.trim() : undefined,
+        seed_html: mode === "html" && html.trim() ? html : undefined,
+      });
       const tree = await api.getTree(project.id);
       setTree(tree.project as any, tree.nodes, tree.edges);
       onClose();
@@ -43,9 +54,15 @@ export default function NewProjectDialog({
     }
   }
 
+  const canSubmit =
+    !!name.trim() &&
+    ((mode === "url" && (!url.trim() || /^https?:\/\//.test(url.trim()))) ||
+      (mode === "html" && html.trim().length > 0) ||
+      (mode === "url" && !url.trim())); // allow blank URL → hello-world
+
   return (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl">
+      <div className="w-full max-w-xl bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl">
         <div className="flex items-center justify-between p-4 border-b border-zinc-800">
           <div className="flex items-center gap-2">
             <Globe className="w-5 h-5 text-amber-400" />
@@ -70,20 +87,60 @@ export default function NewProjectDialog({
           </div>
 
           <div>
-            <label className="text-xs text-zinc-400 mb-1.5 block">
-              Seed URL <span className="text-zinc-600">(optional — leave blank for a hello-world seed)</span>
-            </label>
-            <input
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://example.com"
-              type="url"
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/40"
-              disabled={running}
-            />
-            <p className="text-[11px] text-zinc-500 mt-1">
-              Playwright will capture the live page and inline its assets. Heavy analytics scripts are stripped.
-            </p>
+            <div className="flex gap-1 mb-2">
+              {(
+                [
+                  { id: "url", label: "Seed from URL", icon: Globe },
+                  { id: "html", label: "Paste HTML", icon: Code },
+                ] as const
+              ).map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setMode(m.id)}
+                  disabled={running}
+                  className={clsx(
+                    "flex items-center gap-1.5 px-3 py-1.5 text-xs rounded border",
+                    mode === m.id
+                      ? "bg-amber-500/20 border-amber-500 text-amber-200"
+                      : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-600"
+                  )}
+                >
+                  <m.icon className="w-3.5 h-3.5" />
+                  {m.label}
+                </button>
+              ))}
+            </div>
+
+            {mode === "url" ? (
+              <>
+                <input
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="https://example.com  (leave blank for a hello-world seed)"
+                  type="url"
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                  disabled={running}
+                />
+                <p className="text-[11px] text-zinc-500 mt-1">
+                  We inline CSS and images, drop common analytics scripts, and force UTF-8 decoding.
+                </p>
+              </>
+            ) : (
+              <>
+                <textarea
+                  value={html}
+                  onChange={(e) => setHtml(e.target.value)}
+                  placeholder="<!DOCTYPE html>&#10;<html>...</html>"
+                  rows={10}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-[11px] font-mono leading-snug focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                  disabled={running}
+                />
+                <p className="text-[11px] text-zinc-500 mt-1">
+                  Paste a complete, self-contained HTML document. Use this for polished demo starts that dodge real-site fetch quirks.
+                </p>
+              </>
+            )}
           </div>
 
           {error && (
@@ -103,11 +160,11 @@ export default function NewProjectDialog({
           </button>
           <button
             onClick={submit}
-            disabled={running || !name.trim()}
+            disabled={running || !canSubmit}
             className="flex items-center gap-1.5 px-4 py-1.5 text-sm rounded bg-amber-500 hover:bg-amber-400 text-black font-medium disabled:opacity-50"
           >
             {running && <Loader2 className="w-4 h-4 animate-spin" />}
-            {running ? "Fetching…" : "Create"}
+            {running ? "Preparing seed…" : "Create"}
           </button>
         </div>
       </div>

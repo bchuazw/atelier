@@ -21,6 +21,7 @@
 **Key architecture notes (learned the hard way 2026-04-24):**
 - Supabase Storage force-sets `Content-Type: text/plain` + `nosniff` on uploaded HTML files (XSS defense). Direct iframe loads from Supabase URLs won't render. **Fix:** the `sandbox-server` gained a PROXY mode that fetches from Supabase Storage and rewrites Content-Type from the file extension. This is the third Render service.
 - Render free-tier Python can't reach Supabase's `db.<ref>.supabase.co:5432` (IPv6-only). **Fix:** point `ATELIER_DB_URL` at the Supabase **session pooler** at `aws-1-us-west-1.pooler.supabase.com:5432` (IPv4, username `postgres.<ref>`). The transaction pooler on `:6543` breaks asyncpg prepared statements; session pooler on `:5432` works fine.
+- **Render web services have ephemeral disk.** A variant uploaded during one deploy vanishes from the container's local filesystem after the next redeploy. `node.build_path` alone is not a reliable source of truth — the Supabase Storage object is. **Fix:** `StorageBackend.download_variant_tree(variant_id, dest)` rehydrates any variant's files from Supabase on demand; `_ensure_parent_materialized(parent)` in [routes/media.py](apps/api/atelier_api/routes/media.py) runs before every parent-file read in both the media and fork routes and is idempotent.
 
 **Development workflow (enforced from 2026-04-24 onward):**
 1. Run locally (all 3 services) and verify via Playwright

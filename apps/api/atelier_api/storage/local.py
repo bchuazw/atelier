@@ -21,3 +21,13 @@ class LocalStorage:
     async def download_variant_tree(self, variant_id: str, dest_dir: Path) -> bool:
         # Local storage IS the source of truth; nothing to fetch.
         return False
+
+    async def delete_variant_tree(self, variant_id: str) -> int:
+        import shutil
+
+        root = settings.assets_path / "variants" / variant_id
+        if not root.exists():
+            return 0
+        n = sum(1 for _ in root.rglob("*") if _.is_file())
+        shutil.rmtree(root, ignore_errors=True)
+        return n

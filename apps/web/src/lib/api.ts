@@ -103,10 +103,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   listProjects: () => request<ProjectDTO[]>("/projects"),
-  createProject: (name: string, seed_url?: string) =>
+  createProject: (
+    body: { name: string; seed_url?: string; seed_html?: string } | string,
+    seed_url?: string
+  ) =>
     request<ProjectDTO>("/projects", {
       method: "POST",
-      body: JSON.stringify({ name, seed_url }),
+      body: JSON.stringify(
+        typeof body === "string" ? { name: body, seed_url } : body
+      ),
     }),
   getTree: (projectId: string, includeArchived = false) =>
     request<TreeDTO>(

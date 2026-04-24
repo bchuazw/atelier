@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from atelier_api.config import settings
 from atelier_api.db.session import init_db
+from atelier_api.keepwarm import start_keepwarm
 from atelier_api.routes import fork, media, nodes, projects, settings_route
 
 
@@ -15,7 +16,13 @@ async def lifespan(app: FastAPI):
     await init_db()
     # Warm up asset directories.
     _ = settings.assets_path
-    yield
+    # Kick off keep-warm background task if ATELIER_KEEPWARM_URLS is set.
+    warmer = start_keepwarm(app)
+    try:
+        yield
+    finally:
+        if warmer is not None:
+            warmer.cancel()
 
 
 app = FastAPI(title="Atelier API", version="0.1.0", lifespan=lifespan)

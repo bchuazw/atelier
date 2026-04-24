@@ -49,3 +49,12 @@ class StorageBackend(Protocol):
         may have lost an older variant's tree between deploys.
         """
         ...
+
+    async def delete_variant_tree(self, variant_id: str) -> int:
+        """Remove every file under `variants/<variant_id>/` from backing storage.
+
+        Returns the number of objects removed. Used when cascading a project
+        delete to clean up the Supabase bucket (otherwise the judging URL
+        accumulates leftover variants from test runs).
+        """
+        ...

@@ -150,6 +150,41 @@ class SupabaseStorage:
                 target.write_bytes(resp.content)
         return True
 
+    async def delete_variant_tree(self, variant_id: str) -> int:
+        """Delete every object under variants/<id>/ from the bucket.
+
+        Uses the bulk Supabase endpoint POST /storage/v1/object/<bucket> with
+        body {"prefixes": [...]}; we pass the concrete object paths we
+        enumerated. Returns count deleted."""
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            objects = await self._list_objects(client, variant_id)
+            if not objects:
+                return 0
+            # Supabase delete API expects {"prefixes": [exact/object/keys]} —
+            # "prefixes" is a misnomer; passing a directory prefix alone
+            # doesn't cascade. We always pass the full object paths.
+            prefixes = [o["path"] for o in objects]
+            resp = await client.request(
+                "DELETE",
+                f"{self.url}/storage/v1/object/{self.bucket}",
+                headers={
+                    "Authorization": f"Bearer {self.service_key}",
+                    "apikey": self.service_key,
+                    "Content-Type": "application/json",
+                },
+                json={"prefixes": prefixes},
+            )
+            if resp.status_code >= 400:
+                raise RuntimeError(
+                    f"supabase delete failed [{resp.status_code}]: {resp.text[:200]}"
+                )
+            log.info(
+                "[supabase-storage] deleted %d object(s) for variant %s",
+                len(prefixes),
+                variant_id,
+            )
+            return len(prefixes)
+
     def variant_url(self, variant_id: str, rel_path: str = "") -> str:
         # Prefer the proxy when configured so HTML renders with correct MIME.
         if self.sandbox_public_url:

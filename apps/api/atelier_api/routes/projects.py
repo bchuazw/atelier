@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from atelier_api.config import settings
 from atelier_api.db.models import Edge, Node, Project
 from atelier_api.db.session import get_session
-from atelier_api.sandbox.fetcher import fetch_page
+from atelier_api.sandbox.fetcher import fetch_page, save_html_as_seed
 from atelier_api.storage import storage
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -17,6 +17,7 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 class CreateProjectIn(BaseModel):
     name: str
     seed_url: str | None = None
+    seed_html: str | None = None  # paste-HTML alternative to seed_url
 
 
 class ProjectOut(BaseModel):
@@ -36,16 +37,26 @@ class ProjectPatchIn(BaseModel):
 
 @router.post("", response_model=ProjectOut)
 async def create_project(body: CreateProjectIn, session: AsyncSession = Depends(get_session)):
+    if body.seed_url and body.seed_html:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide either seed_url OR seed_html, not both.",
+        )
     project = Project(name=body.name, seed_url=body.seed_url)
     session.add(project)
     await session.flush()
 
-    # Seed node (always create one; seed empty if no URL).
+    # Seed node (always create one; seed empty if no source).
+    seed_summary = (
+        f"Original: {body.seed_url}"
+        if body.seed_url
+        else (f"Pasted HTML ({len(body.seed_html)} chars)" if body.seed_html else "Blank seed")
+    )
     seed = Node(
         project_id=project.id,
         type="seed",
         title="Seed",
-        summary=f"Original: {body.seed_url}" if body.seed_url else "Blank seed",
+        summary=seed_summary,
         position_x=0.0,
         position_y=0.0,
         created_by="user",
@@ -53,18 +64,20 @@ async def create_project(body: CreateProjectIn, session: AsyncSession = Depends(
     session.add(seed)
     await session.flush()
 
-    # If a URL was supplied, fetch and stash it under assets/variants/<node_id>/.
-    if body.seed_url:
+    if body.seed_url or body.seed_html:
         variant_dir = settings.assets_path / "variants" / seed.id
         try:
-            index_path = await fetch_page(body.seed_url, variant_dir)
+            if body.seed_html:
+                index_path = await save_html_as_seed(body.seed_html, variant_dir)
+            else:
+                index_path = await fetch_page(body.seed_url, variant_dir)  # type: ignore[arg-type]
             seed.artifact_path = str(variant_dir)
             seed.build_path = str(index_path.parent)
             await storage.upload_variant_tree(seed.id, variant_dir)
             seed.build_status = "ready"
         except Exception as e:
             seed.build_status = "error"
-            seed.summary = f"Seed fetch failed: {e}"
+            seed.summary = f"Seed prep failed: {e}"
 
     project.working_node_id = seed.id
     await session.commit()
@@ -234,6 +247,26 @@ async def delete_project(project_id: str, session: AsyncSession = Depends(get_se
     project = await session.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    # Gather node ids before the cascade delete so we can clean up storage.
+    node_ids = [
+        nid
+        for (nid,) in (
+            await session.execute(select(Node.id).where(Node.project_id == project_id))
+        ).all()
+    ]
+
     await session.delete(project)
     await session.commit()
-    return {"ok": True}
+
+    # Best-effort storage cleanup. Failures don't roll back the DB delete —
+    # at worst we leave orphaned objects that are easy to GC later.
+    cleaned = 0
+    failed: list[str] = []
+    for nid in node_ids:
+        try:
+            await storage.delete_variant_tree(nid)
+            cleaned += 1
+        except Exception as e:  # pragma: no cover — defensive
+            failed.append(f"{nid}: {e}")
+    return {"ok": True, "node_count": len(node_ids), "storage_cleaned": cleaned, "storage_failed": failed}
