@@ -10,7 +10,23 @@
 
 ## 0. Handoff — read this first
 
-**Status (as of 2026-04-24):** Phases 0–4 shipped end-to-end, hosted and verified. **SSE streaming for hero-media generation shipped (Phase 3 task 4).** Genspark turned out to have no public API, so MiniMax owns media generation; Genspark stays a sponsor name-drop / screen-recording cameo in the demo video. **Repo is now private** (github.com/bchuazw/atelier); Render keeps pulling because the GitHub App install has access to private repos.
+**Status (as of 2026-04-24):** Phases 0–4 shipped, cycles 1–3.5 complete, everything deployed and live-verified. **SSE streaming shipped for hero-media + merge.** **Light theme + Templates + Feedback (AutoReason-style) + Critics + Model picker + drag-to-combine** all shipped. Genspark turned out to have no public API → MiniMax owns media generation, Genspark remains a sponsor via video cameo. **Repo is private** (github.com/bchuazw/atelier) with Render auto-deploy.
+
+**Full feature matrix (user-facing, all live):**
+
+| Capability | Where | How |
+|---|---|---|
+| **Start a project** from a curated template, a live URL, or pasted HTML | `New project` dialog, 3 tabs | 6 curated aesthetics in `apps/web/public/templates/` |
+| **Iterate via chat** on the selected node | docked PromptBar | Targets selected → checkpoint → working → latest, model picker (Haiku/Sonnet/Opus), Enter-to-send, preset chips |
+| **Fork with N variants** | per-node Fork button → ForkDialog | 1–3 variants, per-model or 3-way shootout |
+| **Generate hero media** (image / short video) | per-node Hero button → MediaDialog | Claude drafts prompt → MiniMax renders → Claude rewrites HTML. Live SSE progress stepper |
+| **Drag-to-combine** two variants | drag one node onto another → MergeDialog | Opus synthesis lifting selected aspects (typography/palette/layout/copy) from source into target. Dashed fuchsia "contribution" edge visible on the canvas |
+| **Apply stakeholder feedback** (AutoReason-style) | TopBar Feedback button → FeedbackDialog | Paste the whole message → Sonnet decomposes into atomic items with area+rationale → approve checklist → one rewrite |
+| **Spawn design critics** against a target theme | TopBar Critics button → CriticsDialog | Name the vibe → Sonnet critiques + ranks (high/medium/low) → approve checklist → one rewrite |
+| **Side-by-side compare** any two nodes | pin to A/B → BeforeAfterViewer | Slider divider, desktop/tablet/mobile sync, overlay mode, hold-Space to flip fullscreen |
+| **Checkpoint** to archive old exploration | per-node Checkpoint button | Older siblings/ancestors hidden, restorable via TopBar |
+| **Project context** influences every LLM call | TopBar Context button | Saved per-project preferences flow into every prompt |
+| **Delete project** with Supabase cleanup | TopBar trash button | Cascades to `storage.delete_variant_tree` for every node |
 
 **Hosted URLs:**
 - Frontend: https://atelier-web.onrender.com
@@ -1491,11 +1507,19 @@ Replaces §21.16. Ordered strictly by what unlocks the submission (hosted URL + 
 - **Keep-warm** — lifespan-managed background task pings `ATELIER_KEEPWARM_URLS` every 10 min. Log lines visible in Render after the basicConfig fix.
 - **Error boundary** around the canvas.
 
-**Cycle 3 shipped (2026-04-24):**
-- **Drag-to-combine** — drop a variant node onto another to synthesize a new variant. Backend `POST /nodes/{target_id}/merge/jobs` + SSE stream runs an Opus-powered pipeline: Claude looks at both HTMLs and lifts only the selected aspects (typography / palette / layout / copy / all) from source onto target. New variant gets two incoming edges: `type="merge"` solid fuchsia from target, `type="contribution"` dashed animated from source.
-- **MergeDialog** — aspect picker (four cards + "all"), optional user note, live SSE stepper (Opus synthesis → materialization), auto-opens Before/After viewer with target=A + merged=B on completion.
-- **Drag gesture** — canvas uses `document.elementFromPoint` during `onNodeDrag` to detect hover-over-another-node, pulses a fuchsia "Combine →" ring on the hover target, snaps the source back to its origin on drop, and opens the MergeDialog.
-- **Animations** — `atelier-merge-source` (source node dims during drag), `atelier-merge-glow` (pulsing ring on hover target), `atelier-merge-arrive` (new merged node scale-fade-in with glow). Contribution edges animate along the path.
-- **Persistent prompt bar** — docked at bottom-center of the canvas. Targets the selected node (or checkpoint / working / latest / seed in that order). Enter submits a fork. Quick chips + a tip about drag-to-combine. Replaces the modal-only fork flow as the primary way to iterate.
+**Cycle 3 shipped (2026-04-24):** Drag-to-combine (Opus-powered merge) + MergeDialog + drag gesture + merge-edge animations + persistent PromptBar.
 
-**Cycle 4 (next):** the 2-minute Hyperframes submission video. The drag-to-combine gesture is now the headline beat to record. Playwright capture script drives the hosted URL; ElevenLabs/OpenAI TTS for narration; Hyperframes composition renders the MP4.
+**Cycle 3.5 shipped (2026-04-24):**
+- **Light (whiteboard) theme** — every component swapped from dark to light; animations for node arrive, dialog entrance, merge glow.
+- **Templates** — 6 curated starter aesthetics (Editorial Serif, Kinetic Bold, Warm Minimal, Glassmorphic Tech, Vintage Poster, Tropical Playful) served as static files under `apps/web/public/templates/`. New-project dialog's default tab.
+- **FeedbackDialog (AutoReason-style)** — backend `POST /nodes/{id}/feedback/analyze` decomposes a paragraph of stakeholder feedback into atomic change items with area+rationale; user approves checklist; apply composes a fork.
+- **CriticsDialog** — backend `POST /nodes/{id}/critics/analyze` reviews current HTML against a target theme and returns category-tagged suggestions with severity; user approves; apply composes a fork.
+- **ModelPicker** — shared component (Haiku/Sonnet/Opus pill group). Docked in PromptBar as `preferredModel`; embedded in Feedback/Critics dialogs.
+- **Verified live** — full user-story walkthrough against hosted URL with Playwright: template project → Critics returned 8 suggestions for "premium luxury" with per-category rationale (high/medium preselected) → Feedback dialog renders as designed.
+
+**Cycle 4 (next):** the 2-minute Hyperframes submission video. Scaffolding committed under [demo-video/](demo-video/):
+- [demo-video/scripts/narration.md](demo-video/scripts/narration.md) — 45-second narration script
+- [demo-video/scripts/narrate.mjs](demo-video/scripts/narrate.mjs) — ElevenLabs (primary) + OpenAI TTS (fallback), keys from env
+- [demo-video/scripts/capture.mjs](demo-video/scripts/capture.mjs) — Playwright script that drives the live URL through all 8 story beats and records WebM
+- [demo-video/README.md](demo-video/README.md) — run order
+User still needs to actually execute `narrate.mjs` + `capture.mjs` + `hyperframes render` to produce the MP4; I prepped all the pieces but didn't run them per request.

@@ -1,0 +1,16 @@
+{
+  "name": "atelier-demo-video",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Hyperframes composition + Playwright capture + TTS narration for the Atelier 2-minute submission video.",
+  "scripts": {
+    "narrate": "node scripts/narrate.mjs",
+    "capture": "node scripts/capture.mjs",
+    "render": "hyperframes render composition.html --out atelier-demo.mp4 --resolution 1920x1080 --fps 30"
+  },
+  "devDependencies": {
+    "playwright": "^1.47.0",
+    "hyperframes": "^0.4.0"
+  }
+}
