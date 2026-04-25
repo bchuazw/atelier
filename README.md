@@ -18,8 +18,6 @@ Every product team has the same broken loop:
 
 **Atelier fixes the loop.** Every critique is a branch on an infinite canvas you can see, compare, and keep. Every suggestion is **grounded in real landing pages crawled from the open web** — so "make it premium" arrives as *"swap Inter for Cormorant Garamond 700 italic, use Aesop's #EDE5D8 parchment, ghost outlined CTA."*
 
-📽 **Demo:** [`demo-video/atelier-demo.mp4`](demo-video/atelier-demo.mp4) (1920×1080 · 1:43 · 4.8 MB · ElevenLabs narration)
-
 ![Atelier canvas — seed, two Claude variants, and an Opus-merged synthesis connected by dashed merge edges](docs/screenshots/canvas-with-merge.png)
 
 *A real session: one seed (Warm Minimal Plume) branches into two variants — one via grounded Critics ("Premium Luxury Dark Rewrite"), one via a PromptBar fork ("Serif italic hero heading"). Drag one onto the other and Opus synthesizes a fourth node with dashed edges showing each parent's contribution.*
