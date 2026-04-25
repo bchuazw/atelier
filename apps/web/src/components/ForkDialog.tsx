@@ -10,12 +10,20 @@ const MODELS = [
   { id: "opus", label: "Opus 4.7", hint: "best quality" },
 ];
 
-const PRESETS = [
+// Two columns: visual changes on the left, copy/voice changes on the
+// right. A first-time user round flagged that all chips were design-flavored
+// — copywriters had nowhere to start.
+const VISUAL_PRESETS = [
   "Make it warmer and more playful",
-  "Bolder headline, stronger CTA above the fold",
   "Cleaner, more minimalist spacing",
   "Higher contrast, more accessible",
   "Modernize the typography",
+];
+const COPY_PRESETS = [
+  "Rewrite the hero headline for [audience]",
+  "Punchier CTA copy — urgent, no jargon",
+  "Sharpen the value prop in one sentence",
+  "Make the tone more confident and human",
 ];
 
 export default function ForkDialog() {
@@ -27,17 +35,16 @@ export default function ForkDialog() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Reset on close. On open, if a prefill prompt is queued (Re-run from a
-  // variant card), seed the textarea with it so the user can tweak the
-  // model + go without retyping.
+  // Reset every time the dialog opens. Earlier we only reset on close,
+  // which left a stale prompt visible if the dialog was reopened without
+  // a prefill (a fresh-user tester hit this and thought the app had
+  // somehow remembered someone else's prompt).
   useEffect(() => {
-    if (!forkDialogOpen) {
-      setPrompt("");
+    if (forkDialogOpen) {
+      setPrompt(forkPrefill ?? "");
       setError(null);
       setRunning(false);
       setShootout(false);
-    } else if (forkPrefill) {
-      setPrompt(forkPrefill);
     }
   }, [forkDialogOpen, forkPrefill]);
 
@@ -80,9 +87,9 @@ export default function ForkDialog() {
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-amber-400" />
             <div>
-              <h2 className="text-base font-medium">Fork from {parent?.title || "node"}</h2>
+              <h2 className="text-base font-medium">Make a version from {parent?.title || "this page"}</h2>
               <p className="text-[11px] text-zinc-500">
-                Describe a change. The LLM will produce a variant; the canvas will branch.
+                Describe a change in plain English. The AI will create a new version next to this one.
               </p>
             </div>
           </div>
@@ -103,17 +110,37 @@ export default function ForkDialog() {
               disabled={running}
               autoFocus
             />
-            <div className="flex flex-wrap gap-1 mt-2">
-              {PRESETS.map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPrompt(p)}
-                  disabled={running}
-                  className="text-[11px] px-2 py-1 rounded-full bg-white border border-zinc-200 text-zinc-500 hover:text-zinc-900 hover:border-zinc-400"
-                >
-                  {p}
-                </button>
-              ))}
+            <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-zinc-400 mb-1">Visual</div>
+                <div className="flex flex-wrap gap-1">
+                  {VISUAL_PRESETS.map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => setPrompt(p)}
+                      disabled={running}
+                      className="text-[11px] px-2 py-1 rounded-full bg-white border border-zinc-200 text-zinc-500 hover:text-zinc-900 hover:border-zinc-400"
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-zinc-400 mb-1">Copy / voice</div>
+                <div className="flex flex-wrap gap-1">
+                  {COPY_PRESETS.map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => setPrompt(p)}
+                      disabled={running}
+                      className="text-[11px] px-2 py-1 rounded-full bg-white border border-zinc-200 text-zinc-500 hover:text-zinc-900 hover:border-zinc-400"
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
 

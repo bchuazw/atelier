@@ -49,7 +49,7 @@ export default function EmptyState({ onNewProject }: { onNewProject: () => void 
       await api.deleteProject(p.id);
       setProjects((prev) => prev.filter((q) => q.id !== p.id));
     } catch (e) {
-      alert(`Failed to delete: ${(e as Error).message}`);
+      useUI.getState().showError(`Failed to delete: ${(e as Error).message}`);
     } finally {
       setBusyId(null);
     }
@@ -64,10 +64,11 @@ export default function EmptyState({ onNewProject }: { onNewProject: () => void 
             <span className="text-2xl font-semibold tracking-tight">Atelier</span>
           </div>
           <p className="text-sm text-zinc-700 font-medium">
-            Branch every critique. Cite every source.
+            Iterate on landing pages with AI — side by side, on a canvas.
           </p>
           <p className="text-[12px] text-zinc-500 max-w-md mx-auto">
-            An infinite canvas for iterating on landing pages with AI that cites real references.
+            Drop in a page, ask for changes in plain English, and compare versions
+            in a few clicks. Every change cites real references.
           </p>
         </div>
 

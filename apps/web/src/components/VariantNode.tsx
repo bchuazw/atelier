@@ -92,7 +92,7 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
       // shows up instantly without a tree refresh.
       useUI.getState().upsertNode({ ...node, title: next });
     } catch (e) {
-      alert(`Rename failed: ${(e as Error).message}`);
+      useUI.getState().showError(`Rename failed: ${(e as Error).message}`);
       setDraftTitle(node.title || "");
     }
   }
@@ -151,7 +151,9 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
         } catch (err) {
           // Server-side delete failed — restore optimistically so the
           // UI doesn't lie about state.
-          alert(`Delete failed on the server: ${(err as Error).message}. Restoring.`);
+          useUI.getState().showError(
+            `Couldn't delete on server: ${(err as Error).message}. The variant has been restored.`
+          );
           if (project) {
             const tree = await api.getTree(project.id, includeArchived);
             setTree(tree.project, tree.nodes, tree.edges);
@@ -517,7 +519,7 @@ function VariantCostPill({
   if (cost < 0.0001) return null;
   return (
     <span
-      className="px-1 rounded bg-zinc-100 text-zinc-500 text-[9px] flex-shrink-0"
+      className="px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-mono font-medium flex-shrink-0"
       title={`Token usage:\n  input: ${input.toLocaleString()}\n  output: ${output.toLocaleString()}\n  cache read: ${cacheRead.toLocaleString()}\n  cache write: ${cacheCreate.toLocaleString()}\n\nCost estimate uses the actual model's list pricing (Haiku/Sonnet/Opus).`}
     >
       ~${cost < 0.01 ? cost.toFixed(4) : cost.toFixed(2)}

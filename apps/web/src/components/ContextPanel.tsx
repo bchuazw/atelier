@@ -11,13 +11,33 @@ Palette: warm neutrals + a single accent (coral or terracotta).
 Must preserve: the pricing table, the footer logo cluster, the "Book a demo" CTA.
 Avoid: stock photography, generic testimonials, gradient text.`;
 
-const PIN_PRESETS: { label: string; pin: StylePin }[] = [
-  { label: "Pin H1 weight", pin: { prop: "h1 font-weight", value: "800" } },
-  { label: "Pin primary color", pin: { prop: "primary color", value: "#c87050" } },
-  { label: "Pin accent color", pin: { prop: "accent color", value: "#1a1a1a" } },
-  { label: "Pin type scale", pin: { prop: "type scale ratio", value: "1.25" } },
-  { label: "Pin body font", pin: { prop: "body font-family", value: "Inter" } },
-  { label: "Pin radius", pin: { prop: "border-radius", value: "12px" } },
+// Two flavors of preset: visual (CSS-y) and voice (copy-y). A fresh-user
+// round flagged that the panel was design-only and useless to a copywriter —
+// voice pins now get the same treatment, with sensible defaults the user
+// can tweak inline.
+type PresetGroup = { heading: string; pins: { label: string; pin: StylePin }[] };
+const PIN_PRESETS: PresetGroup[] = [
+  {
+    heading: "Visual",
+    pins: [
+      { label: "H1 weight", pin: { prop: "h1 font-weight", value: "800" } },
+      { label: "Primary color", pin: { prop: "primary color", value: "#c87050" } },
+      { label: "Accent color", pin: { prop: "accent color", value: "#1a1a1a" } },
+      { label: "Type scale", pin: { prop: "type scale ratio", value: "1.25" } },
+      { label: "Body font", pin: { prop: "body font-family", value: "Inter" } },
+      { label: "Radius", pin: { prop: "border-radius", value: "12px" } },
+    ],
+  },
+  {
+    heading: "Voice & copy",
+    pins: [
+      { label: "Tone", pin: { prop: "tone of voice", value: "confident, human, no jargon" } },
+      { label: "Audience", pin: { prop: "audience", value: "early-stage founders" } },
+      { label: "Reading level", pin: { prop: "reading level", value: "8th grade" } },
+      { label: "Banned words", pin: { prop: "banned words", value: "synergy, leverage, unlock" } },
+      { label: "CTA verb", pin: { prop: "primary CTA verb", value: "Start" } },
+    ],
+  },
 ];
 
 export default function ContextPanel() {
@@ -147,23 +167,34 @@ export default function ContextPanel() {
                 </div>
               )}
             </div>
-            {/* Quick-add presets — common pins for common needs. */}
-            <div className="flex flex-wrap gap-1 mt-2">
-              {PIN_PRESETS.map((pre) => {
-                const already = draftPins.some(
-                  (p) => p.prop.toLowerCase() === pre.pin.prop.toLowerCase()
-                );
-                return (
-                  <button
-                    key={pre.label}
-                    onClick={() => addPin(pre.pin)}
-                    disabled={saving || already}
-                    className="text-[10px] px-2 py-0.5 rounded-full bg-white border border-zinc-200 text-zinc-500 hover:text-zinc-900 hover:border-zinc-400 disabled:opacity-30"
-                  >
-                    + {pre.label}
-                  </button>
-                );
-              })}
+            {/* Quick-add presets — visual + voice grouped so copywriters
+                see a column that matters to them, designers see one that
+                matters to them. */}
+            <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
+              {PIN_PRESETS.map((group) => (
+                <div key={group.heading}>
+                  <div className="text-[10px] uppercase tracking-wider text-zinc-400 mb-1">
+                    {group.heading}
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {group.pins.map((pre) => {
+                      const already = draftPins.some(
+                        (p) => p.prop.toLowerCase() === pre.pin.prop.toLowerCase()
+                      );
+                      return (
+                        <button
+                          key={pre.label}
+                          onClick={() => addPin(pre.pin)}
+                          disabled={saving || already}
+                          className="text-[10px] px-2 py-0.5 rounded-full bg-white border border-zinc-200 text-zinc-500 hover:text-zinc-900 hover:border-zinc-400 disabled:opacity-30"
+                        >
+                          + {pre.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 

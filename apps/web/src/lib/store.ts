@@ -62,6 +62,9 @@ type UIState = {
     // Function called if the timer expires (commits the action server-side).
     commit: () => Promise<void>;
   } | null;
+  // Non-blocking error notification. Replaces native `alert()` which was
+  // freezing the page on server failures and looked unprofessional.
+  errorToast: { message: string; expiresAt: number } | null;
 
   // actions
   setTree: (project: ProjectDTO | null, nodes: NodeDTO[], edges: EdgeDTO[]) => void;
@@ -109,6 +112,10 @@ type UIState = {
   // Force the staged action to commit immediately (used when the
   // grace timer expires, or when the user navigates away).
   flushPendingUndo: () => Promise<void>;
+  // Show an error toast for a few seconds. Auto-dismisses; users can
+  // also click X. Replaces every prior `alert()` call site.
+  showError: (message: string, ttlMs?: number) => void;
+  dismissError: () => void;
 };
 
 export const useUI = create<UIState>((set) => ({
@@ -138,6 +145,7 @@ export const useUI = create<UIState>((set) => ({
   busy: false,
   sessionUsage: { input: 0, output: 0, cache_read: 0, cache_creation: 0 },
   pendingUndo: null,
+  errorToast: null,
 
   setTree: (project, nodes, edges) => set({ project, nodes, edges }),
   setProject: (project) => set({ project }),
@@ -230,6 +238,18 @@ export const useUI = create<UIState>((set) => ({
       await cur.commit();
     } catch (e) {
       console.error("flushPendingUndo failed", e);
+      useUI.getState().showError(
+        `Action failed: ${(e as Error).message || "unknown error"}`
+      );
     }
   },
+  showError: (message, ttlMs = 6000) => {
+    const expiresAt = Date.now() + ttlMs;
+    set({ errorToast: { message, expiresAt } });
+    setTimeout(() => {
+      const cur = useUI.getState().errorToast;
+      if (cur && cur.expiresAt === expiresAt) set({ errorToast: null });
+    }, ttlMs + 50);
+  },
+  dismissError: () => set({ errorToast: null }),
 }));

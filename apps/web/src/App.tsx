@@ -14,6 +14,7 @@ import FeedbackDialog from "./components/FeedbackDialog";
 import CriticsDialog from "./components/CriticsDialog";
 import ExportDialog from "./components/ExportDialog";
 import UndoToast from "./components/UndoToast";
+import ErrorToast from "./components/ErrorToast";
 import { useUI } from "./lib/store";
 import { api } from "./lib/api";
 
@@ -89,6 +90,16 @@ export default function App() {
         return;
       }
 
+      // Bare Esc exits Compare mode if it's active and no dialog is open.
+      // A fresh-user tester reported feeling "stuck" in compare with no
+      // obvious exit; the exit buttons exist but Esc is the natural reach.
+      if (e.key === "Escape" && (ui.compare.a || ui.compare.b)) {
+        e.preventDefault();
+        ui.setCompareA(null);
+        ui.setCompareB(null);
+        return;
+      }
+
       // App-level shortcuts: Shift + <letter>. Anything bare just falls
       // through to React Flow's own handling (panning, zoom, etc.).
       if (!e.shiftKey) return;
@@ -141,6 +152,7 @@ export default function App() {
       <BeforeAfterViewer />
       <ContextPanel />
       <UndoToast />
+      <ErrorToast />
     </div>
   );
 }

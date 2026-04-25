@@ -204,10 +204,11 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
               setCompareA(null);
               setCompareB(null);
             }}
-            className="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-cyan-100 text-cyan-700 text-[11px]"
+            className="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-cyan-100 text-cyan-700 text-[11px] font-medium"
+            title="Esc"
           >
             <X className="w-3 h-3" />
-            Cancel
+            Exit Compare
           </button>
         </div>
       )}
@@ -233,9 +234,10 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
                 setCompareA(null);
                 setCompareB(null);
               }}
-              className="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-cyan-200 text-cyan-700 text-[11px]"
+              className="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-cyan-200 text-cyan-700 text-[11px] font-medium"
+              title="Esc"
             >
-              <X className="w-3 h-3" /> Clear
+              <X className="w-3 h-3" /> Exit Compare
             </button>
           </div>
         </div>
@@ -306,7 +308,7 @@ function ProjectNameInline({
       const tree = await api.getTree(projectId, includeArchived);
       setTree(tree.project as any, tree.nodes, tree.edges);
     } catch (e) {
-      alert(`Rename failed: ${(e as Error).message}`);
+      useUI.getState().showError(`Rename failed: ${(e as Error).message}`);
       setDraft(name);
     }
   }
