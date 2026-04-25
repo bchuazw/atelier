@@ -119,8 +119,13 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
       </div>
 
       <div className="p-3 space-y-1.5">
-        <div className="flex items-center gap-1.5 text-[13px] font-medium">
-          <span className="truncate">{node.title || "Untitled"}</span>
+        <div className="text-[13px] font-medium leading-tight">
+          {/* Wrap long titles to a second line instead of truncating mid-word
+              (which produced things like "Bolder headline, b…"). Hard cap
+              at two lines so the card doesn't grow unboundedly. */}
+          <span className="line-clamp-2 break-words" title={node.title || "Untitled"}>
+            {node.title || "Untitled"}
+          </span>
         </div>
         {node.summary && (
           <p className="text-[11px] text-zinc-500 leading-snug line-clamp-2">{node.summary}</p>

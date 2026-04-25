@@ -43,7 +43,11 @@ FORK_SYSTEM = [
             "4. Keep relative asset paths intact (anything under assets/... must stay as-is).\n"
             "5. Do NOT introduce external fonts, frameworks, or CDN links the document doesn't already use.\n"
             "6. After the HTML, on a NEW line, write exactly `---META---` then a short JSON object "
-            '{"title": "3-5 word descriptor", "summary": "one sentence what changed", "reasoning": "2-3 sentences why this achieves the goal"}.\n\n'
+            '{"title": "2-4 word headline (no commas, no full sentences, like a chapter heading)", '
+            '"summary": "one sentence what changed", "reasoning": "2-3 sentences why this achieves the goal"}.\n'
+            'Title examples that work: "Editorial Serif Hero", "Bolder Headline", "Calmer Spacing".\n'
+            'Title examples to avoid: "Bolder headline, larger CTA" (has comma), '
+            '"Made the headline shorter and bolder" (full sentence, too long).\n\n'
             "Output format (literal, no other commentary):\n"
             "<!DOCTYPE html>\n<html ...>\n...full document...\n</html>\n---META---\n{\"title\": ..., \"summary\": ..., \"reasoning\": ...}\n"
         ),

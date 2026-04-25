@@ -16,6 +16,8 @@ import "reactflow/dist/style.css";
 import VariantNode, { type VariantNodeData } from "./VariantNode";
 import { api } from "@/lib/api";
 import { useUI } from "@/lib/store";
+import { computeTreeLayout, diffPositions } from "@/lib/autoLayout";
+import { Wand } from "lucide-react";
 
 const nodeTypes = { variant: VariantNode };
 
@@ -219,6 +221,34 @@ function CanvasInner() {
     return () => window.removeEventListener("keydown", onKey);
   }, [setSelected]);
 
+  // Tidy: re-flow the tree with the canonical Reingold–Tilford layout, then
+  // PATCH each moved node so the new positions persist server-side too.
+  const onTidy = useCallback(async () => {
+    const target = computeTreeLayout(nodes);
+    const moves = diffPositions(nodes, target);
+    if (moves.length === 0) return;
+    // Optimistic local update so the canvas snaps immediately.
+    for (const m of moves) {
+      const n = nodes.find((x) => x.id === m.id);
+      if (n) upsertNode({ ...n, position: { x: m.x, y: m.y } });
+    }
+    // Re-fit after the snap so everything's in view.
+    requestAnimationFrame(() => {
+      try {
+        rf.fitView({
+          padding: FIT_VIEW_PADDING_FOR_PROMPTBAR,
+          duration: 600,
+          minZoom: 0.3,
+          maxZoom: 1.0,
+        });
+      } catch {}
+    });
+    // Persist — fire-and-forget so the UI stays snappy.
+    await Promise.allSettled(
+      moves.map((m) => api.patchNode(m.id, { position_x: m.x, position_y: m.y }))
+    );
+  }, [nodes, rf, upsertNode]);
+
   return (
     <div className="w-full h-full">
       <ReactFlow
@@ -238,6 +268,16 @@ function CanvasInner() {
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#27272a" />
         <Controls position="bottom-left" />
+        {nodes.length > 1 && (
+          <button
+            onClick={onTidy}
+            title="Tidy — re-flow the tree so siblings spread evenly + parents center over their children"
+            className="absolute bottom-4 left-[88px] flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-white border border-zinc-300 text-zinc-700 hover:border-zinc-500 shadow-sm z-10"
+          >
+            <Wand className="w-3 h-3" />
+            Tidy
+          </button>
+        )}
         <MiniMap pannable zoomable nodeColor={() => "#71717a"} maskColor="rgba(0,0,0,0.6)" />
       </ReactFlow>
     </div>

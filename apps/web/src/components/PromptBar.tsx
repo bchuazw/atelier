@@ -1,17 +1,43 @@
-import { useMemo, useState } from "react";
-import { Sparkles, Loader2, Target, ChevronUp, ChevronDown } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Sparkles, Loader2, Target, ChevronUp, ChevronDown, History } from "lucide-react";
 import clsx from "clsx";
 import { api } from "@/lib/api";
 import { useUI } from "@/lib/store";
 import ModelPicker from "./ModelPicker";
 
-const QUICK_CHIPS = [
+const CURATED_CHIPS = [
   "make it warmer and more playful",
   "bolder headline, larger CTA",
   "cleaner, more minimalist spacing",
   "swap to a serif heading",
   "asymmetric layout — text left, visual right",
 ];
+
+// Persist the last 5 prompts the user actually shipped (per project) so
+// "what I tried last time" sits one click away on subsequent forks.
+const RECENT_PROMPTS_KEY = (projectId: string) => `atelier:recentPrompts:${projectId}`;
+const MAX_RECENT_PROMPTS = 5;
+
+function loadRecentPrompts(projectId: string | null | undefined): string[] {
+  if (!projectId) return [];
+  try {
+    const raw = localStorage.getItem(RECENT_PROMPTS_KEY(projectId));
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentPrompt(projectId: string, prompt: string) {
+  try {
+    const existing = loadRecentPrompts(projectId).filter((p) => p !== prompt);
+    const next = [prompt, ...existing].slice(0, MAX_RECENT_PROMPTS);
+    localStorage.setItem(RECENT_PROMPTS_KEY(projectId), JSON.stringify(next));
+  } catch {
+    // localStorage full or disabled — silently skip; recent-prompts is a
+    // nice-to-have, not load-bearing.
+  }
+}
 
 export default function PromptBar() {
   const {
@@ -47,6 +73,12 @@ export default function PromptBar() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
+  const [recentPrompts, setRecentPrompts] = useState<string[]>([]);
+
+  // Hydrate recent prompts when the active project changes.
+  useEffect(() => {
+    setRecentPrompts(loadRecentPrompts(project?.id));
+  }, [project?.id]);
 
   // Determine the target node: selected > checkpoint > working > most recent variant > seed.
   const target = useMemo(() => {
@@ -66,10 +98,13 @@ export default function PromptBar() {
     if (!target || !prompt.trim()) return;
     setRunning(true);
     setError(null);
+    const trimmed = prompt.trim();
     try {
-      await api.fork(target.id, prompt.trim(), preferredModel, 1, false);
+      await api.fork(target.id, trimmed, preferredModel, 1, false);
       const tree = await api.getTree(project!.id, includeArchived);
       useUI.getState().setTree(tree.project, tree.nodes, tree.edges);
+      saveRecentPrompt(project!.id, trimmed);
+      setRecentPrompts(loadRecentPrompts(project!.id));
       setPrompt("");
     } catch (e: any) {
       setError(e?.message || "Fork failed");
@@ -145,8 +180,34 @@ export default function PromptBar() {
               </button>
             </div>
 
-            <div className="flex flex-wrap gap-1 mt-2 px-0.5">
-              {QUICK_CHIPS.map((c) => (
+            <div className="flex flex-wrap items-center gap-1 mt-2 px-0.5">
+              {/* Recent prompts (per-project, persisted in localStorage)
+                  surface first so users can re-fire what they just tried
+                  on a sibling. Visually marked with a History icon + amber
+                  tint to distinguish from the curated chips. */}
+              {recentPrompts.length > 0 && (
+                <>
+                  <span
+                    className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium flex items-center gap-1 mr-1"
+                    title="Your last 5 prompts on this project"
+                  >
+                    <History className="w-3 h-3" /> Recent
+                  </span>
+                  {recentPrompts.map((c) => (
+                    <button
+                      key={`recent-${c}`}
+                      onClick={() => setPrompt(c)}
+                      disabled={running || !target}
+                      title={c}
+                      className="text-[11px] px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 hover:border-amber-400 disabled:opacity-40 max-w-[260px] truncate"
+                    >
+                      {c}
+                    </button>
+                  ))}
+                  <span className="w-px h-4 bg-zinc-200 mx-1" />
+                </>
+              )}
+              {CURATED_CHIPS.map((c) => (
                 <button
                   key={c}
                   onClick={() => setPrompt(c)}
