@@ -106,14 +106,30 @@ async def _generate_one(
     prompt: str,
     model_choice: str,
     context: str | None = None,
+    style_pins: list[dict] | None = None,
 ) -> tuple[str, dict, llm.LlmResponse]:
     context_block = (
         f"USER CONTEXT (project preferences, audience, brand notes — respect these):\n{context.strip()}\n\n"
         if context and context.strip()
         else ""
     )
+    pins_block = ""
+    if style_pins:
+        pin_lines = [
+            f"- {p['prop']}: {p['value']}"
+            for p in style_pins
+            if p.get("prop") and p.get("value")
+        ]
+        if pin_lines:
+            pins_block = (
+                "STYLE PINS — these are HARD constraints. Every variant MUST honor these "
+                "exact values, no matter what the instruction asks for. If they conflict "
+                "with the instruction, the pins win:\n"
+                + "\n".join(pin_lines)
+                + "\n\n"
+            )
     user_msg = (
-        f"{context_block}INSTRUCTION:\n{prompt}\n\nPARENT_HTML (truncated if long):\n```html\n{parent_html[:60000]}\n```\n\n"
+        f"{context_block}{pins_block}INSTRUCTION:\n{prompt}\n\nPARENT_HTML (truncated if long):\n```html\n{parent_html[:60000]}\n```\n\n"
         "Now produce the modified HTML document followed by ---META--- and the JSON meta."
     )
     resp = await llm.call(system=FORK_SYSTEM, user=user_msg, model=model_choice, max_tokens=8192)
@@ -142,6 +158,7 @@ async def fork_node(parent_id: str, body: ForkIn, session: AsyncSession = Depend
     # Load project for context (user-provided preferences that flavor every generation).
     project = await session.get(Project, parent.project_id)
     context_text = (project.settings or {}).get("context") if project else None
+    style_pins = (project.settings or {}).get("style_pins") if project else None
 
     # Resolve which models to run. Shootout = one variant per model, overriding n + model.
     if body.shootout:
@@ -150,7 +167,10 @@ async def fork_node(parent_id: str, body: ForkIn, session: AsyncSession = Depend
         models_to_run = [body.model or "sonnet"] * body.n
 
     generations = await asyncio.gather(
-        *[_generate_one(parent_html, body.prompt, m, context=context_text) for m in models_to_run],
+        *[
+            _generate_one(parent_html, body.prompt, m, context=context_text, style_pins=style_pins)
+            for m in models_to_run
+        ],
         return_exceptions=True,
     )
 
@@ -307,13 +327,18 @@ async def _run_fork_job_bg(job_id: str, parent_id: str, body: ForkJobIn) -> None
 
             project = await session.get(Project, parent.project_id)
             context_text = (project.settings or {}).get("context") if project else None
+            style_pins = (project.settings or {}).get("style_pins") if project else None
 
             model_choice = body.model or "sonnet"
             await jobs.emit(job_id, "rewriting-html", {"model": model_choice})
             started = time.time()
             try:
                 html, meta, resp = await _generate_one(
-                    parent_html, body.prompt, model_choice, context=context_text
+                    parent_html,
+                    body.prompt,
+                    model_choice,
+                    context=context_text,
+                    style_pins=style_pins,
                 )
             except Exception as e:
                 log.exception("fork job generation failed")

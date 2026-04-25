@@ -82,7 +82,7 @@ export type StyleDiff = {
   property: string;
   before: string | null;
   after: string | null;
-  category: "typography" | "palette" | "spacing" | "effects" | "layout";
+  category: "typography" | "palette" | "spacing" | "effects" | "layout" | "structure";
 };
 
 /** Parse every `<style>` tag in a document and return the rules merged
@@ -122,6 +122,101 @@ function parseStyles(html: string): StyleRule[] {
   return Array.from(merged.entries()).map(([selector, decls]) => ({ selector, decls }));
 }
 
+/**
+ * Walk the DOM body of an HTML string and produce a "signature" set —
+ * one entry per visible structural element using `tag.classes#id` shape.
+ * Used to detect added / removed nav links, sections, cards, etc.
+ *
+ * Uses DOMParser so we get real tree semantics (CSS doesn't capture
+ * structural changes — adding a 4th nav link doesn't show up in any
+ * `.nav a` rule, the rule already exists). Fails open on parse errors.
+ */
+function elementSignatures(html: string): { sig: string; text: string }[] {
+  const out: { sig: string; text: string }[] = [];
+  if (typeof DOMParser === "undefined") return out;
+  let doc: Document;
+  try {
+    doc = new DOMParser().parseFromString(html, "text/html");
+  } catch {
+    return out;
+  }
+  const body = doc.body;
+  if (!body) return out;
+
+  // Skip non-visual elements (script/style). Skip <head>. Walk <body>.
+  const SKIP_TAGS = new Set(["script", "style", "noscript", "template"]);
+
+  function walk(el: Element) {
+    const tag = el.tagName.toLowerCase();
+    if (SKIP_TAGS.has(tag)) return;
+    const classes = el.classList.length
+      ? "." + Array.from(el.classList).slice(0, 3).join(".")
+      : "";
+    const id = el.id ? `#${el.id}` : "";
+    // Short text snippet so the user can tell "Apply" link from "Sign in"
+    // when they share the same selector.
+    const text = (el.textContent || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 40);
+    const sig = `${tag}${id}${classes}`;
+    out.push({ sig, text });
+    for (const child of Array.from(el.children)) walk(child);
+  }
+  for (const child of Array.from(body.children)) walk(child);
+  return out;
+}
+
+/** Compare structural signatures between two HTML strings. Returns
+ *  diffs marked with category `"structure"`. */
+function computeStructureDiff(beforeHtml: string, afterHtml: string): StyleDiff[] {
+  const before = elementSignatures(beforeHtml);
+  const after = elementSignatures(afterHtml);
+
+  // Bag-count comparison: a tag-class signature can repeat (e.g. nav links).
+  // We use a multiset so adding a 4th nav link counts as a real change.
+  const beforeCounts = new Map<string, number>();
+  const afterCounts = new Map<string, number>();
+  const beforeSamples = new Map<string, string>();
+  const afterSamples = new Map<string, string>();
+
+  for (const e of before) {
+    beforeCounts.set(e.sig, (beforeCounts.get(e.sig) ?? 0) + 1);
+    if (!beforeSamples.has(e.sig) && e.text) beforeSamples.set(e.sig, e.text);
+  }
+  for (const e of after) {
+    afterCounts.set(e.sig, (afterCounts.get(e.sig) ?? 0) + 1);
+    if (!afterSamples.has(e.sig) && e.text) afterSamples.set(e.sig, e.text);
+  }
+
+  const allSigs = new Set([...beforeCounts.keys(), ...afterCounts.keys()]);
+  const out: StyleDiff[] = [];
+  for (const sig of allSigs) {
+    const b = beforeCounts.get(sig) ?? 0;
+    const a = afterCounts.get(sig) ?? 0;
+    if (b === a) continue;
+    // Decorate the value with a sample text snippet so users see "what
+    // got added" instead of just an opaque selector.
+    const sample = afterSamples.get(sig) || beforeSamples.get(sig) || "";
+    const fmt = (count: number) => (count === 0 ? "—" : `${count}`);
+    out.push({
+      selector: sample ? `${sig} · "${sample}"` : sig,
+      property: a === 0 ? "removed" : b === 0 ? "added" : "count",
+      before: fmt(b),
+      after: fmt(a),
+      category: "structure",
+    });
+  }
+  // Sort: added first, then removed, then count changes; alphabetical within each.
+  const groupOrder: Record<string, number> = { added: 0, removed: 1, count: 2 };
+  out.sort(
+    (x, y) =>
+      (groupOrder[x.property] ?? 9) - (groupOrder[y.property] ?? 9) ||
+      x.selector.localeCompare(y.selector)
+  );
+  return out;
+}
+
 /** Compute a flat list of property-level diffs between two HTML strings. */
 export function computeStyleDiff(beforeHtml: string, afterHtml: string): StyleDiff[] {
   const beforeRules = parseStyles(beforeHtml);
@@ -151,14 +246,20 @@ export function computeStyleDiff(beforeHtml: string, afterHtml: string): StyleDi
     }
   }
 
-  // Sort: by category (typography first → palette → spacing → effects → layout),
-  // then by selector for stability.
+  // Append structural diffs (added/removed elements) so the lens
+  // catches "the headline now has a 3-line copy block" and "a 4th
+  // nav link appeared" cases that no CSS rule would surface.
+  out.push(...computeStructureDiff(beforeHtml, afterHtml));
+
+  // Sort: structure changes get the most attention so they go first,
+  // then typography → palette → spacing → effects → layout.
   const order: Record<StyleDiff["category"], number> = {
-    typography: 0,
-    palette: 1,
-    spacing: 2,
-    effects: 3,
-    layout: 4,
+    structure: 0,
+    typography: 1,
+    palette: 2,
+    spacing: 3,
+    effects: 4,
+    layout: 5,
   };
   out.sort((x, y) => order[x.category] - order[y.category] || x.selector.localeCompare(y.selector));
   return out;

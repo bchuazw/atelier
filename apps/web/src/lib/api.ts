@@ -26,6 +26,15 @@ export type NodeDTO = {
     references?: { url: string; title?: string }[];
     changes?: string[];
   } | null;
+  // Per-variant Anthropic token usage. Used by the card to render a
+  // "~$0.012" cost pill so users see what each fork cost without doing
+  // mental math against the session total.
+  token_usage?: {
+    input?: number;
+    output?: number;
+    cache_read?: number;
+    cache_creation?: number;
+  } | null;
 };
 
 export type EdgeDTO = {
@@ -36,6 +45,8 @@ export type EdgeDTO = {
   prompt_text: string | null;
 };
 
+export type StylePin = { prop: string; value: string };
+
 export type ProjectDTO = {
   id: string;
   name: string;
@@ -43,11 +54,14 @@ export type ProjectDTO = {
   working_node_id: string | null;
   created_at?: string;
   context?: string;
+  // Structured design constraints injected into every fork prompt as
+  // hard "must honor" rules. Lives next to free-form context so users
+  // can lock typography / palette / spacing without rewriting them in
+  // prose every time.
+  style_pins?: StylePin[];
   active_checkpoint_id?: string | null;
   archived_count?: number;
   total_count?: number;
-  // Populated by GET /projects only — node count and last-edit time so the
-  // recent-projects panel can show useful metadata.
   node_count?: number;
   last_activity?: string | null;
 };
@@ -207,9 +221,21 @@ export const api = {
     request<{ ok: boolean }>(`/projects/${projectId}`, { method: "DELETE" }),
   patchProject: (
     projectId: string,
-    body: { context?: string; active_checkpoint_id?: string; clear_checkpoint?: boolean; name?: string }
+    body: {
+      context?: string;
+      active_checkpoint_id?: string;
+      clear_checkpoint?: boolean;
+      name?: string;
+      style_pins?: StylePin[];
+    }
   ) =>
-    request<{ ok: boolean; name: string; context: string; active_checkpoint_id: string | null }>(
+    request<{
+      ok: boolean;
+      name: string;
+      context: string;
+      style_pins?: StylePin[];
+      active_checkpoint_id: string | null;
+    }>(
       `/projects/${projectId}`,
       { method: "PATCH", body: JSON.stringify(body) }
     ),

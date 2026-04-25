@@ -33,12 +33,25 @@ class ProjectOut(BaseModel):
     last_activity: str | None = None  # ISO string; defaults to created_at
 
 
+class StylePin(BaseModel):
+    """A single structured design constraint the user wants every fork to
+    honor. Free-text but typed for clarity:
+      - prop:  the design property being pinned ("h1 weight", "primary color")
+      - value: the value to honor ("800", "#c87050", "1.25 ratio")
+    Stored in project.settings.style_pins; injected into every fork +
+    critic prompt as a short bullet list."""
+
+    prop: str
+    value: str
+
+
 class ProjectPatchIn(BaseModel):
     # Any field provided is updated; omitted fields are left alone.
     context: str | None = None
     active_checkpoint_id: str | None = None
     clear_checkpoint: bool | None = None
     name: str | None = None  # rename the project (validated in route)
+    style_pins: list[StylePin] | None = None  # full replace when provided
 
 
 @router.post("", response_model=ProjectOut)
@@ -211,6 +224,7 @@ async def get_tree(
             "seed_url": project.seed_url,
             "working_node_id": project.working_node_id,
             "context": proj_settings.get("context", ""),
+            "style_pins": proj_settings.get("style_pins", []),
             "active_checkpoint_id": checkpoint_id,
             "archived_count": archived_count,
             "total_count": total_count,
@@ -230,16 +244,22 @@ async def get_tree(
                 "is_checkpoint": bool(checkpoint_id) and n.id == checkpoint_id,
                 # Slim subset of n.reasoning for the variant card —
                 # `references` (Genspark grounding) + `changes` (the diffs
-                # the rewriter declared). Heavy fields like the full prompt
-                # text stay server-side.
+                # the rewriter declared) + `prompt` (so Re-run can use it
+                # without a separate fetch). Heavy fields like the full
+                # rewriter reasoning stay server-side.
                 "reasoning": (
                     {
+                        "prompt": (n.reasoning or {}).get("prompt"),
                         "references": (n.reasoning or {}).get("references", []) or [],
                         "changes": (n.reasoning or {}).get("changes", []) or [],
                     }
                     if n.reasoning
                     else None
                 ),
+                # Per-variant token usage so the card can show "this fork
+                # cost ~$0.012". Only returned when present (seed nodes
+                # have no usage).
+                "token_usage": n.token_usage,
             }
             for n in nodes
         ],
@@ -278,6 +298,14 @@ async def patch_project(
         if not node or node.project_id != project_id:
             raise HTTPException(status_code=400, detail="Checkpoint node not in this project")
         current["active_checkpoint_id"] = body.active_checkpoint_id
+    if body.style_pins is not None:
+        # Filter empty/blank pins; cap at 12 to keep the prompt short.
+        cleaned = [
+            {"prop": p.prop.strip(), "value": p.value.strip()}
+            for p in body.style_pins
+            if p.prop.strip() and p.value.strip()
+        ][:12]
+        current["style_pins"] = cleaned
     project.settings = current
     if body.name is not None:
         new_name = body.name.strip()
@@ -289,6 +317,7 @@ async def patch_project(
         "ok": True,
         "name": project.name,
         "context": current.get("context", ""),
+        "style_pins": current.get("style_pins", []),
         "active_checkpoint_id": current.get("active_checkpoint_id"),
     }
 

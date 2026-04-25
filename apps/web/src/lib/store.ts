@@ -50,6 +50,18 @@ type UIState = {
   // returns a `token_usage` payload — gives the user a running estimate of
   // how much they've spent in the current browser session.
   sessionUsage: { input: number; output: number; cache_read: number; cache_creation: number };
+  // Pending destructive action with an undo grace window. The variant
+  // delete flow stages the deletion locally + shows a toast; only
+  // commits the API call after the user lets the timer run out.
+  pendingUndo: {
+    label: string;
+    expiresAt: number;
+    // Snapshot of removed nodes/edges so undo can restore them in the
+    // store without a tree-refresh round-trip.
+    snapshot: { nodes: NodeDTO[]; edges: EdgeDTO[] };
+    // Function called if the timer expires (commits the action server-side).
+    commit: () => Promise<void>;
+  } | null;
 
   // actions
   setTree: (project: ProjectDTO | null, nodes: NodeDTO[], edges: EdgeDTO[]) => void;
@@ -84,6 +96,19 @@ type UIState = {
   upsertNode: (n: NodeDTO) => void;
   addEdge: (e: EdgeDTO) => void;
   addUsage: (usage: { input?: number; output?: number; cache_read?: number; cache_creation?: number }) => void;
+  // Stage a destructive action with an undo grace window. Returns the
+  // toast id so callers can dismiss it manually if they want.
+  stagePendingUndo: (params: {
+    label: string;
+    snapshot: { nodes: NodeDTO[]; edges: EdgeDTO[] };
+    commit: () => Promise<void>;
+    expiresInMs?: number;
+  }) => void;
+  // Cancel the staged action — restore snapshot, drop the toast.
+  cancelPendingUndo: () => void;
+  // Force the staged action to commit immediately (used when the
+  // grace timer expires, or when the user navigates away).
+  flushPendingUndo: () => Promise<void>;
 };
 
 export const useUI = create<UIState>((set) => ({
@@ -112,6 +137,7 @@ export const useUI = create<UIState>((set) => ({
   includeArchived: false,
   busy: false,
   sessionUsage: { input: 0, output: 0, cache_read: 0, cache_creation: 0 },
+  pendingUndo: null,
 
   setTree: (project, nodes, edges) => set({ project, nodes, edges }),
   setProject: (project) => set({ project }),
@@ -165,4 +191,45 @@ export const useUI = create<UIState>((set) => ({
         cache_creation: s.sessionUsage.cache_creation + (usage.cache_creation ?? 0),
       },
     })),
+  stagePendingUndo: ({ label, snapshot, commit, expiresInMs = 8000 }) => {
+    // Auto-flush after the grace window. The setTimeout is not stored
+    // on the store because it'd add a non-serializable handle; cancel /
+    // flush short-circuit it instead.
+    const expiresAt = Date.now() + expiresInMs;
+    set({ pendingUndo: { label, expiresAt, snapshot, commit } });
+    setTimeout(async () => {
+      const cur = useUI.getState().pendingUndo;
+      // Bail if user already cancelled (cur=null) or staged a different
+      // action (cur.expiresAt differs).
+      if (!cur || cur.expiresAt !== expiresAt) return;
+      try {
+        await cur.commit();
+      } finally {
+        if (useUI.getState().pendingUndo?.expiresAt === expiresAt) {
+          set({ pendingUndo: null });
+        }
+      }
+    }, expiresInMs + 50);
+  },
+  cancelPendingUndo: () =>
+    set((s) => {
+      const undo = s.pendingUndo;
+      if (!undo) return {};
+      // Restore the snapshot — re-add the deleted nodes + edges.
+      const existingIds = new Set(s.nodes.map((n) => n.id));
+      const restoredNodes = [...s.nodes, ...undo.snapshot.nodes.filter((n) => !existingIds.has(n.id))];
+      const existingEdgeIds = new Set(s.edges.map((e) => e.id));
+      const restoredEdges = [...s.edges, ...undo.snapshot.edges.filter((e) => !existingEdgeIds.has(e.id))];
+      return { pendingUndo: null, nodes: restoredNodes, edges: restoredEdges };
+    }),
+  flushPendingUndo: async () => {
+    const cur = useUI.getState().pendingUndo;
+    if (!cur) return;
+    set({ pendingUndo: null });
+    try {
+      await cur.commit();
+    } catch (e) {
+      console.error("flushPendingUndo failed", e);
+    }
+  },
 }));

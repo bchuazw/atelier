@@ -13,6 +13,7 @@ import PromptBar from "./components/PromptBar";
 import FeedbackDialog from "./components/FeedbackDialog";
 import CriticsDialog from "./components/CriticsDialog";
 import ExportDialog from "./components/ExportDialog";
+import UndoToast from "./components/UndoToast";
 import { useUI } from "./lib/store";
 import { api } from "./lib/api";
 
@@ -139,6 +140,7 @@ export default function App() {
       <ExportDialog />
       <BeforeAfterViewer />
       <ContextPanel />
+      <UndoToast />
     </div>
   );
 }

@@ -521,6 +521,7 @@ function VPButton({
 }
 
 const CATEGORY_LABEL: Record<StyleDiff["category"], string> = {
+  structure: "Structure",
   typography: "Typography",
   palette: "Palette",
   spacing: "Spacing",
@@ -529,6 +530,7 @@ const CATEGORY_LABEL: Record<StyleDiff["category"], string> = {
 };
 
 const CATEGORY_TONE: Record<StyleDiff["category"], string> = {
+  structure: "bg-emerald-50 border-emerald-200 text-emerald-800",
   typography: "bg-amber-50 border-amber-200 text-amber-800",
   palette: "bg-rose-50 border-rose-200 text-rose-800",
   spacing: "bg-cyan-50 border-cyan-200 text-cyan-800",

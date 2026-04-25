@@ -97,19 +97,68 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
     }
   }
 
-  async function deleteVariant(e: React.MouseEvent) {
+  function deleteVariant(e: React.MouseEvent) {
     e.stopPropagation();
     if (!project) return;
-    const subtreeWord = "this variant + every child branch under it";
-    if (!confirm(`Delete "${node.title || "this node"}"? This removes ${subtreeWord}. Cannot be undone.`))
-      return;
-    try {
-      await api.deleteNode(node.id);
-      const tree = await api.getTree(project.id, includeArchived);
-      setTree(tree.project, tree.nodes, tree.edges);
-    } catch (err) {
-      alert(`Delete failed: ${(err as Error).message}`);
+    const ui = useUI.getState();
+
+    // Walk the descendant subtree locally so we know what would be
+    // removed — both for the snapshot (Undo restores all of it) and the
+    // optimistic local prune (the canvas updates instantly).
+    const allNodes = ui.nodes;
+    const allEdges = ui.edges;
+    const toRemoveIds = new Set<string>([node.id]);
+    let frontier: string[] = [node.id];
+    while (frontier.length) {
+      const next: string[] = [];
+      for (const id of frontier) {
+        for (const child of allNodes) {
+          if (child.parent_id === id && !toRemoveIds.has(child.id)) {
+            toRemoveIds.add(child.id);
+            next.push(child.id);
+          }
+        }
+      }
+      frontier = next;
     }
+    const removedNodes = allNodes.filter((n) => toRemoveIds.has(n.id));
+    const removedEdges = allEdges.filter(
+      (e) => toRemoveIds.has(e.from) || toRemoveIds.has(e.to)
+    );
+
+    // Optimistic prune: drop nodes/edges from the store now. Store the
+    // snapshot inside the pendingUndo entry so cancelPendingUndo can
+    // restore them.
+    useUI.setState({
+      nodes: allNodes.filter((n) => !toRemoveIds.has(n.id)),
+      edges: allEdges.filter(
+        (e) => !toRemoveIds.has(e.from) && !toRemoveIds.has(e.to)
+      ),
+    });
+
+    const count = removedNodes.length;
+    const label =
+      count === 1
+        ? `Deleted "${node.title || "variant"}"`
+        : `Deleted "${node.title || "variant"}" + ${count - 1} descendant${count === 2 ? "" : "s"}`;
+
+    ui.stagePendingUndo({
+      label,
+      snapshot: { nodes: removedNodes, edges: removedEdges },
+      commit: async () => {
+        try {
+          await api.deleteNode(node.id);
+        } catch (err) {
+          // Server-side delete failed — restore optimistically so the
+          // UI doesn't lie about state.
+          alert(`Delete failed on the server: ${(err as Error).message}. Restoring.`);
+          if (project) {
+            const tree = await api.getTree(project.id, includeArchived);
+            setTree(tree.project, tree.nodes, tree.edges);
+          }
+        }
+      },
+    });
   }
 
   function reRun(e: React.MouseEvent) {
@@ -241,7 +290,10 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
           <p className="text-[11px] text-zinc-500 leading-snug line-clamp-2">{node.summary}</p>
         )}
         {node.model_used && (
-          <div className="text-[10px] text-zinc-500 font-mono">{node.model_used}</div>
+          <div className="flex items-center justify-between gap-2 text-[10px] text-zinc-500 font-mono">
+            <span className="truncate">{node.model_used}</span>
+            <VariantCostPill usage={node.token_usage} model={node.model_used} />
+          </div>
         )}
 
         {/* Action buttons. Six total — Fork is the prominent primary, the
@@ -430,5 +482,45 @@ function IconButton({
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * Per-variant cost pill. Estimates USD using the model the variant was
+ * actually generated with so users see "Opus = expensive" intuitively
+ * (Haiku at $0.25/$1.25 vs Sonnet at $3/$15 vs Opus at $15/$75 per 1M).
+ */
+function VariantCostPill({
+  usage,
+  model,
+}: {
+  usage: NodeDTO["token_usage"];
+  model: string | null;
+}) {
+  if (!usage) return null;
+  const input = usage.input ?? 0;
+  const output = usage.output ?? 0;
+  const cacheRead = usage.cache_read ?? 0;
+  const cacheCreate = usage.cache_creation ?? 0;
+  if (input + output + cacheRead + cacheCreate === 0) return null;
+  // Per-1M pricing (USD) — read from the model id so cost reflects what
+  // the user actually picked. Defaults to Sonnet rates when unknown.
+  const m = (model || "").toLowerCase();
+  const tier =
+    m.includes("haiku")
+      ? { i: 0.25, o: 1.25, cr: 0.025, cw: 0.3 }
+      : m.includes("opus")
+      ? { i: 15, o: 75, cr: 1.5, cw: 18.75 }
+      : { i: 3, o: 15, cr: 0.3, cw: 3.75 };
+  const cost =
+    (input * tier.i + output * tier.o + cacheRead * tier.cr + cacheCreate * tier.cw) / 1_000_000;
+  if (cost < 0.0001) return null;
+  return (
+    <span
+      className="px-1 rounded bg-zinc-100 text-zinc-500 text-[9px] flex-shrink-0"
+      title={`Token usage:\n  input: ${input.toLocaleString()}\n  output: ${output.toLocaleString()}\n  cache read: ${cacheRead.toLocaleString()}\n  cache write: ${cacheCreate.toLocaleString()}\n\nCost estimate uses the actual model's list pricing (Haiku/Sonnet/Opus).`}
+    >
+      ~${cost < 0.01 ? cost.toFixed(4) : cost.toFixed(2)}
+    </span>
   );
 }
