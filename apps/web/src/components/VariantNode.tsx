@@ -203,7 +203,7 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
               transform: "scale(0.2031)", // 260/1280
               transformOrigin: "top left",
             }}
-            sandbox="allow-scripts allow-same-origin"
+            sandbox="allow-scripts"
             loading="lazy"
           />
         ) : (
@@ -212,9 +212,14 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
             {node.build_status}
           </div>
         )}
-        <div className="absolute top-1.5 left-1.5 rounded-md bg-zinc-900/40 text-[10px] uppercase tracking-wide px-1.5 py-0.5 text-zinc-700">
-          {node.type}
-        </div>
+        {/* Suppress the type chip when the card is also showing a CHECKPOINT
+            or A/B Compare badge — a senior designer flagged that two
+            simultaneous coloured tags read as duelling selection states. */}
+        {!isCheckpoint && !isA && !isB && (
+          <div className="absolute top-1.5 left-1.5 rounded-md bg-zinc-900/40 text-[10px] uppercase tracking-wide px-1.5 py-0.5 text-zinc-700">
+            {node.type}
+          </div>
+        )}
         {isCheckpoint && (
           <div className="absolute top-1.5 right-1.5 rounded-md bg-fuchsia-500 text-[10px] font-bold tracking-wide px-1.5 py-0.5 text-black flex items-center gap-1">
             <Anchor className="w-3 h-3" /> CHECKPOINT
@@ -311,7 +316,7 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
             }}
             disabled={node.build_status !== "ready"}
             title="Fork this variant — type a prompt and Claude rewrites the HTML"
-            className="flex-1 flex items-center justify-center gap-1 text-[11px] px-2 py-1 rounded bg-amber-500 hover:bg-amber-400 text-black font-medium disabled:opacity-40"
+            className="flex-1 flex items-center justify-center gap-1 text-[12px] px-2 py-1.5 rounded bg-amber-500 hover:bg-amber-400 text-black font-medium disabled:opacity-40"
           >
             <GitFork className="w-3 h-3" /> Fork
           </button>
@@ -342,7 +347,7 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
                 : "Step 2 of compare: pin as B and open split viewer"
             }
             className={clsx(
-              "flex items-center gap-1 text-[11px] px-2 py-1 rounded font-medium",
+              "flex items-center gap-1 text-[12px] px-2 py-1.5 rounded font-medium",
               isA || isB
                 ? "bg-cyan-500 text-white"
                 : compare.a
@@ -406,7 +411,8 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
               rel="noreferrer"
               onClick={(e) => e.stopPropagation()}
               title="Open the rendered page in a new tab"
-              className="flex items-center justify-center w-7 h-7 rounded bg-zinc-100 hover:bg-zinc-200 text-zinc-600 ml-auto"
+              aria-label="Open the rendered page in a new tab"
+              className="flex items-center justify-center w-7 h-7 rounded bg-zinc-50 hover:bg-zinc-100 text-zinc-600 hover:text-zinc-900 ml-auto"
             >
               <Eye className="w-3.5 h-3.5" />
             </a>
@@ -425,7 +431,8 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
                 setRenaming(true);
               }}
               title="Rename this variant"
-              className="flex items-center justify-center w-7 h-7 rounded bg-zinc-50 hover:bg-zinc-100 text-zinc-500"
+              aria-label="Rename this variant"
+              className="flex items-center justify-center w-7 h-7 rounded bg-zinc-50 hover:bg-zinc-100 text-zinc-600 hover:text-zinc-900"
             >
               <Pencil className="w-3 h-3" />
             </button>
@@ -433,7 +440,8 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
               <button
                 onClick={reRun}
                 title={`Re-run with same prompt (${(node.reasoning.prompt || "").slice(0, 80)}…) — model can be swapped`}
-                className="flex items-center justify-center w-7 h-7 rounded bg-zinc-50 hover:bg-zinc-100 text-zinc-500"
+                aria-label="Re-run with the same prompt"
+                className="flex items-center justify-center w-7 h-7 rounded bg-zinc-50 hover:bg-zinc-100 text-zinc-600 hover:text-zinc-900"
               >
                 <RotateCw className="w-3 h-3" />
               </button>
@@ -441,7 +449,8 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
             <button
               onClick={deleteVariant}
               title="Delete this variant + every child branch under it"
-              className="flex items-center justify-center w-7 h-7 rounded bg-zinc-50 hover:bg-rose-100 hover:text-rose-600 text-zinc-500 ml-auto"
+              aria-label="Delete this variant"
+              className="flex items-center justify-center w-7 h-7 rounded bg-zinc-50 hover:bg-rose-100 hover:text-rose-600 text-zinc-600 ml-auto"
             >
               <Trash2 className="w-3 h-3" />
             </button>
@@ -452,31 +461,37 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
   );
 }
 
+// Secondary card actions are visually unified — neutral ghost buttons with
+// a single accent reserved for the *active* state (checkpoint pinned).
+// Earlier the row had a purple wand, purple anchor, and orange download
+// side-by-side which a senior designer flagged as "color soup with no
+// system." The icon itself conveys what the button does; color reserved
+// for state, not category.
 function IconButton({
   children,
   onClick,
   disabled,
   title,
-  tone,
   active,
 }: {
   children: React.ReactNode;
   onClick: (e: React.MouseEvent) => void;
   disabled?: boolean;
   title: string;
-  tone: "fuchsia" | "amber";
+  // Kept on the type so existing callers compile without churn; visual
+  // treatment no longer differs by tone.
+  tone?: "fuchsia" | "amber";
   active?: boolean;
 }) {
   const colors = active
-    ? "bg-fuchsia-300 text-fuchsia-800 cursor-default"
-    : tone === "fuchsia"
-    ? "bg-fuchsia-100 hover:bg-fuchsia-200 text-fuchsia-700"
-    : "bg-amber-100 hover:bg-amber-200 text-amber-700";
+    ? "bg-fuchsia-200 text-fuchsia-800 cursor-default"
+    : "bg-zinc-50 hover:bg-zinc-100 text-zinc-600 hover:text-zinc-900";
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       title={title}
+      aria-label={title}
       className={clsx(
         "flex items-center justify-center w-7 h-7 rounded disabled:opacity-40",
         colors

@@ -59,14 +59,14 @@ export default function EmptyState({ onNewProject }: { onNewProject: () => void 
     <div className="w-full h-full flex items-center justify-center bg-stone-50 text-zinc-700">
       <div className="max-w-xl w-full space-y-8 p-8">
         <div className="text-center space-y-2">
-          <div className="inline-flex items-center gap-2 text-amber-400">
-            <Palette className="w-8 h-8" />
+          <h1 className="inline-flex items-center gap-2 text-amber-500 m-0">
+            <Palette className="w-8 h-8" aria-hidden="true" />
             <span className="text-2xl font-semibold tracking-tight">Atelier</span>
-          </div>
+          </h1>
           <p className="text-sm text-zinc-700 font-medium">
             Iterate on landing pages with AI — side by side, on a canvas.
           </p>
-          <p className="text-[12px] text-zinc-500 max-w-md mx-auto">
+          <p className="text-[12px] text-zinc-600 max-w-md mx-auto">
             Drop in a page, ask for changes in plain English, and compare versions
             in a few clicks. Every change cites real references.
           </p>
@@ -83,8 +83,8 @@ export default function EmptyState({ onNewProject }: { onNewProject: () => void 
         </div>
 
         {!loading && projects.length > 0 && (
-          <div>
-            <h3 className="text-xs uppercase tracking-wide text-zinc-500 mb-2">Recent projects</h3>
+          <nav aria-label="Recent projects">
+            <h2 className="text-xs uppercase tracking-wide text-zinc-600 mb-2">Recent projects</h2>
             <div className="space-y-1">
               {projects.map((p) => (
                 <ProjectRow
@@ -96,7 +96,7 @@ export default function EmptyState({ onNewProject }: { onNewProject: () => void 
                 />
               ))}
             </div>
-          </div>
+          </nav>
         )}
       </div>
     </div>
@@ -131,11 +131,11 @@ function ProjectRow({
           )}
         </div>
         {p.seed_url && (
-          <div className="text-[11px] text-zinc-500 font-mono truncate">{p.seed_url}</div>
+          <div className="text-[11px] text-zinc-600 font-mono truncate">{p.seed_url}</div>
         )}
       </button>
       <div className="flex items-center gap-3 flex-shrink-0">
-        <div className="text-[11px] text-zinc-500">
+        <div className="text-[11px] text-zinc-600">
           {formatRelative(p.last_activity || p.created_at || null)}
         </div>
         <button
@@ -143,8 +143,9 @@ function ProjectRow({
             e.stopPropagation();
             onDelete();
           }}
-          className="text-zinc-400 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition"
+          className="text-zinc-500 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition"
           title="Delete project"
+          aria-label="Delete project"
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>

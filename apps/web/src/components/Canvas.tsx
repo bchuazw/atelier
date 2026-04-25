@@ -213,6 +213,32 @@ function CanvasInner() {
     return () => window.clearTimeout(t);
   }, [recentlyMergedId, markRecentlyMerged]);
 
+  // Re-fit on viewport resize. A senior designer flagged that variants clip
+  // when the user resizes to 1280×800 (the most common designer monitor) —
+  // without this, only the initial mount fitView fires and the tree stays
+  // pinned at the old viewport size.
+  useEffect(() => {
+    let pending: number | null = null;
+    const onResize = () => {
+      if (pending !== null) window.cancelAnimationFrame(pending);
+      pending = window.requestAnimationFrame(() => {
+        try {
+          rf.fitView({
+            padding: FIT_VIEW_PADDING_FOR_PROMPTBAR,
+            duration: 250,
+            minZoom: 0.3,
+            maxZoom: 1.0,
+          });
+        } catch {}
+      });
+    };
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      if (pending !== null) window.cancelAnimationFrame(pending);
+    };
+  }, [rf]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setSelected(null);

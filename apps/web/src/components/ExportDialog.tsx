@@ -49,11 +49,13 @@ export default function ExportDialog() {
     }
     setLoading(true);
     setError(null);
-    fetch(
-      (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/+$/, "") +
-        `/nodes/${exportNodeId}/export` ||
-        `/api/v1/nodes/${exportNodeId}/export`
-    )
+    // Earlier this fell through to literal "undefined/nodes/<id>/export" when
+    // VITE_API_BASE was not set, because operator precedence consumed the
+    // ?? fallback before the concatenation rather than after — Vite then
+    // returned its SPA index.html and JSON.parse choked on `<!doctype`.
+    const base =
+      (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/+$/, "") || "/api/v1";
+    fetch(`${base}/nodes/${exportNodeId}/export`)
       .then((r) => (r.ok ? r.json() : r.text().then((t) => Promise.reject(new Error(t)))))
       .then(setData)
       .catch((e: any) => setError(e?.message || "Export failed"))

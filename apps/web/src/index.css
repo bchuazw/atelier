@@ -15,6 +15,24 @@ body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
+/* Tokenized focus indicator. Default UA outlines are browser-dependent
+   (Chrome auto vs. Safari blue vs. Firefox dotted) and a design-systems
+   reviewer flagged that the indicator wasn't predictable across surfaces.
+   2px solid amber matches the primary accent and is visually distinct
+   on every background we use. Mouse clicks fall back to no outline via
+   :focus-visible so we don't create noisy pointer interactions. */
+:focus-visible {
+  outline: 2px solid #f59e0b; /* amber-500 */
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+button:focus:not(:focus-visible),
+a:focus:not(:focus-visible),
+input:focus:not(:focus-visible),
+textarea:focus:not(:focus-visible) {
+  outline: none;
+}
+
 /* ── React Flow — light whiteboard surface ──────────────────────────────── */
 
 .react-flow__background {

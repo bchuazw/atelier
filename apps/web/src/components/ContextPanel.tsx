@@ -121,7 +121,7 @@ export default function ContextPanel() {
               <div className="flex items-center gap-1.5">
                 <Pin className="w-3.5 h-3.5 text-amber-600" />
                 <span className="text-[12px] font-medium">Style pins</span>
-                <span className="text-[10px] text-zinc-500">
+                <span className="text-[11px] text-zinc-600">
                   · hard constraints every fork must honor
                 </span>
               </div>

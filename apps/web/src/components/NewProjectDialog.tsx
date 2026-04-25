@@ -185,7 +185,7 @@ export default function NewProjectDialog({
                               transform: "scale(0.225)",
                               transformOrigin: "top left",
                             }}
-                            sandbox="allow-scripts allow-same-origin"
+                            sandbox="allow-scripts"
                             loading="lazy"
                           />
                         </div>

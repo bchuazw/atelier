@@ -127,20 +127,22 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-full w-full bg-stone-50 text-zinc-900">
-      <TopBar onNewProject={() => setNewProjectOpen(true)} />
+      <header role="banner">
+        <TopBar onNewProject={() => setNewProjectOpen(true)} />
+      </header>
 
       {statusWarning && (
-        <div className="px-4 py-1.5 bg-rose-100 border-b border-rose-300 text-[12px] text-rose-600">
+        <div role="alert" className="px-4 py-1.5 bg-rose-100 border-b border-rose-300 text-[12px] text-rose-700">
           {statusWarning}
         </div>
       )}
 
-      <div className="flex-1 relative">
+      <main className="flex-1 relative" aria-label="Canvas">
         <ErrorBoundary>
           {project ? <Canvas /> : <EmptyState onNewProject={() => setNewProjectOpen(true)} />}
         </ErrorBoundary>
         {project && <PromptBar />}
-      </div>
+      </main>
 
       <NewProjectDialog open={newProjectOpen} onClose={() => setNewProjectOpen(false)} />
       <ForkDialog />
