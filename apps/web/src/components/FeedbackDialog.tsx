@@ -47,6 +47,7 @@ export default function FeedbackDialog() {
     setCompareB,
     includeArchived,
     project,
+    selectedNodeId,
   } = useUI();
 
   const [message, setMessage] = useState("");
@@ -178,9 +179,17 @@ export default function FeedbackDialog() {
         </div>
 
         <div className="p-4 space-y-4">
-          <div className="text-[11px] flex items-center gap-2 text-zinc-500">
+          <div className="text-[11px] flex items-center gap-2 text-zinc-500 flex-wrap">
             <span>Targeting:</span>
             <span className="text-sky-700 font-medium">{target.title || "Untitled"}</span>
+            {!selectedNodeId && (
+              <span
+                className="text-[10px] text-zinc-400 italic"
+                title="Click a variant on the canvas first to target that one instead."
+              >
+                (default — click a variant first to target it)
+              </span>
+            )}
             <span className="text-zinc-400">·</span>
             <ModelPicker value={model} onChange={setModel} disabled={stage !== "compose"} />
           </div>

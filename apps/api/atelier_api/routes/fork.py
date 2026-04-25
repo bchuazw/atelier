@@ -13,10 +13,13 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import select, func
+
 from atelier_api import jobs
 from atelier_api.config import settings
 from atelier_api.db.models import Edge, Node, Project
 from atelier_api.db.session import SessionLocal, get_session
+from atelier_api.layout import next_child_position
 from atelier_api.llm import client as llm
 from atelier_api.storage import storage
 
@@ -144,9 +147,17 @@ async def fork_node(parent_id: str, body: ForkIn, session: AsyncSession = Depend
     )
 
     results: list[ForkChildOut] = []
-    # Spread children horizontally below the parent.
+    # Existing siblings already determine where the new fan should start so
+    # we don't overlap them. Then spread *this batch* horizontally around
+    # that anchor. (Sync path is rarely used; SSE path uses next_child_position.)
+    existing_siblings_q = await session.execute(
+        select(func.count()).select_from(Node).where(Node.parent_id == parent.id)
+    )
+    existing_siblings = int(existing_siblings_q.scalar() or 0)
+    from atelier_api.layout import CHILD_X_STEP
+
     count = len(models_to_run)
-    base_x = parent.position_x - (count - 1) * 220.0
+    base_x = parent.position_x + existing_siblings * CHILD_X_STEP - (count - 1) * (CHILD_X_STEP / 2)
     for i, gen in enumerate(generations):
         if isinstance(gen, Exception):
             continue
@@ -174,8 +185,8 @@ async def fork_node(parent_id: str, body: ForkIn, session: AsyncSession = Depend
             created_by="agent",
             model_used=resp.model,
             token_usage=resp.usage_dict,
-            position_x=base_x + i * 440.0,
-            position_y=parent.position_y + 260.0,
+            position_x=base_x + i * CHILD_X_STEP,
+            position_y=parent.position_y + 290.0,
             build_status="building",
         )
         session.add(node)
@@ -295,7 +306,10 @@ async def _run_fork_job_bg(job_id: str, parent_id: str, body: ForkJobIn) -> None
                 },
             )
 
-            # Materialize + edge
+            # Materialize + edge — `next_child_position` counts existing
+            # siblings of `parent` and fans the new child out so it doesn't
+            # land on top of an earlier fork.
+            child_x, child_y = await next_child_position(session, parent)
             node = Node(
                 project_id=parent.project_id,
                 parent_id=parent.id,
@@ -310,8 +324,8 @@ async def _run_fork_job_bg(job_id: str, parent_id: str, body: ForkJobIn) -> None
                 created_by="agent",
                 model_used=resp.model,
                 token_usage=resp.usage_dict,
-                position_x=parent.position_x + 240.0,
-                position_y=parent.position_y + 260.0,
+                position_x=child_x,
+                position_y=child_y,
                 build_status="building",
             )
             session.add(node)

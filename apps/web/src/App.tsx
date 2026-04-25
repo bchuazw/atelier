@@ -38,6 +38,71 @@ export default function App() {
       });
   }, []);
 
+  // Global keyboard shortcuts. Only fire when no input/textarea is focused
+  // and no modal is open — we don't want "F" to also typed-into the
+  // PromptBar textarea or interrupt typing in any dialog.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      const ui = useUI.getState();
+      const anyDialogOpen =
+        ui.forkDialogOpen ||
+        ui.mediaDialogOpen ||
+        !!ui.mergeDialog ||
+        ui.feedbackDialogOpen ||
+        ui.criticsDialogOpen ||
+        ui.exportDialogOpen ||
+        ui.viewerOpen ||
+        ui.contextPanelOpen;
+      if (anyDialogOpen) return;
+      if (!project) return;
+
+      const targetId =
+        ui.selectedNodeId ||
+        project.active_checkpoint_id ||
+        project.working_node_id ||
+        ui.nodes[ui.nodes.length - 1]?.id ||
+        null;
+
+      const lower = e.key.toLowerCase();
+      if (lower === "f" && targetId) {
+        e.preventDefault();
+        ui.openFork(targetId);
+      } else if (lower === "c" && targetId) {
+        e.preventDefault();
+        ui.openCritics(targetId);
+      } else if (lower === "b" && targetId) {
+        e.preventDefault();
+        ui.openFeedback(targetId);
+      } else if (lower === "v" && ui.compare.a && ui.compare.b) {
+        e.preventDefault();
+        ui.openViewer();
+      } else if (lower === "n") {
+        e.preventDefault();
+        setNewProjectOpen(true);
+      } else if (e.key === "?" || (e.shiftKey && e.key === "/")) {
+        e.preventDefault();
+        // Show a quick tooltip-style alert with available shortcuts
+        alert(
+          "Atelier keyboard shortcuts\n\n" +
+            "F — Fork the targeted node\n" +
+            "C — Critics on the targeted node\n" +
+            "B — Feedback (paste-stakeholder) on the targeted node\n" +
+            "V — open the split Compare viewer (when both A and B are pinned)\n" +
+            "N — New project\n" +
+            "? — show this help\n\n" +
+            "Inside the Compare viewer:\n" +
+            "S — Side by side · D — Split · O — Overlay\n" +
+            "1 — Desktop · 2 — Tablet · 3 — Mobile\n" +
+            "Esc — close"
+        );
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [project]);
+
   return (
     <div className="flex flex-col h-full w-full bg-stone-50 text-zinc-900">
       <TopBar onNewProject={() => setNewProjectOpen(true)} />

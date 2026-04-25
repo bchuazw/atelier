@@ -37,6 +37,10 @@ export type ProjectDTO = {
   active_checkpoint_id?: string | null;
   archived_count?: number;
   total_count?: number;
+  // Populated by GET /projects only — node count and last-edit time so the
+  // recent-projects panel can show useful metadata.
+  node_count?: number;
+  last_activity?: string | null;
 };
 
 export type TreeDTO = {
@@ -194,9 +198,9 @@ export const api = {
     request<{ ok: boolean }>(`/projects/${projectId}`, { method: "DELETE" }),
   patchProject: (
     projectId: string,
-    body: { context?: string; active_checkpoint_id?: string; clear_checkpoint?: boolean }
+    body: { context?: string; active_checkpoint_id?: string; clear_checkpoint?: boolean; name?: string }
   ) =>
-    request<{ ok: boolean; context: string; active_checkpoint_id: string | null }>(
+    request<{ ok: boolean; name: string; context: string; active_checkpoint_id: string | null }>(
       `/projects/${projectId}`,
       { method: "PATCH", body: JSON.stringify(body) }
     ),
@@ -310,6 +314,21 @@ export function subscribeToJob<TChild = MediaChildDTO>(
     try {
       const ev = JSON.parse(raw.data);
       onEvent(ev);
+      // Forward token usage from any event into the session-usage tally.
+      // The backend emits `html-rewritten` (fork), `media-rendered` (hero),
+      // `merge-rewritten` (merge) with token_usage payloads.
+      if (ev?.data?.token_usage && typeof ev.data.token_usage === "object") {
+        const u = ev.data.token_usage as Record<string, number>;
+        // Lazy import to avoid circular dep at module load.
+        import("./store").then(({ useUI }) => {
+          useUI.getState().addUsage({
+            input: u.input,
+            output: u.output,
+            cache_read: u.cache_read,
+            cache_creation: u.cache_creation,
+          });
+        });
+      }
       if (ev.type === "node-ready") {
         finalResult = { ok: true, child: ev.data as TChild };
       } else if (ev.type === "error") {

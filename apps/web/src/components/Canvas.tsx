@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import ReactFlow, {
   Background,
   BackgroundVariant,
   Controls,
   MiniMap,
+  ReactFlowProvider,
   applyNodeChanges,
+  useReactFlow,
   type Edge as RFEdge,
   type Node as RFNode,
   type NodeChange,
@@ -16,6 +18,12 @@ import { api } from "@/lib/api";
 import { useUI } from "@/lib/store";
 
 const nodeTypes = { variant: VariantNode };
+
+// PromptBar's footprint when expanded with chips is ~280px. React Flow's
+// fitView only takes a single relative padding, so we go a bit generous
+// (0.35 = roughly 320px on a 900px viewport) to make sure the bottom-most
+// node always lands above the bar even on small screens.
+const FIT_VIEW_PADDING_FOR_PROMPTBAR = 0.35;
 
 /**
  * Inspect the element under the given screen-space cursor coordinates and
@@ -32,7 +40,7 @@ function rfNodeIdAtPoint(clientX: number, clientY: number, excludeId?: string): 
   return id;
 }
 
-export default function Canvas() {
+function CanvasInner() {
   const {
     nodes,
     edges,
@@ -46,6 +54,35 @@ export default function Canvas() {
     recentlyMergedId,
     markRecentlyMerged,
   } = useUI();
+  const rf = useReactFlow();
+  // Re-fit the view whenever the number of nodes changes (i.e. a fork or
+  // merge produced a new variant). Without this the new node lands wherever
+  // the layout helper put it — typically below the visible viewport, hidden
+  // behind the PromptBar overlay. Using FIT_VIEW_PADDING_FOR_PROMPTBAR keeps
+  // a comfortable bottom margin so the new node always lands above the bar.
+  const lastFittedCount = useRef(0);
+  useEffect(() => {
+    if (nodes.length === lastFittedCount.current) return;
+    if (nodes.length === 0) {
+      lastFittedCount.current = 0;
+      return;
+    }
+    // Defer one frame so React Flow has actually rendered the new node.
+    const handle = window.requestAnimationFrame(() => {
+      try {
+        rf.fitView({
+          padding: FIT_VIEW_PADDING_FOR_PROMPTBAR,
+          duration: 600,
+          minZoom: 0.3,
+          maxZoom: 1.0,
+        });
+      } catch {
+        // ReactFlow not yet ready — skip silently.
+      }
+    });
+    lastFittedCount.current = nodes.length;
+    return () => window.cancelAnimationFrame(handle);
+  }, [nodes.length, rf]);
 
   const rfNodes = useMemo<RFNode<VariantNodeData>[]>(
     () =>
@@ -67,34 +104,44 @@ export default function Canvas() {
     [nodes, mergeDrag, recentlyMergedId]
   );
 
-  const rfEdges = useMemo<RFEdge[]>(
-    () =>
-      edges.map((e) => {
-        const isContribution = e.type === "contribution";
-        const isMerge = e.type === "merge";
-        return {
-          id: e.id,
-          source: e.from,
-          target: e.to,
-          type: "smoothstep",
-          animated: isContribution,
-          style: isContribution
-            ? { stroke: "#e879f9", strokeWidth: 2, strokeDasharray: "6 5" }
-            : isMerge
-            ? { stroke: "#d946ef", strokeWidth: 2.5 }
-            : undefined,
-          label: e.prompt_text
-            ? e.prompt_text.slice(0, 30) + (e.prompt_text.length > 30 ? "…" : "")
-            : undefined,
-          labelStyle: isContribution
-            ? { fill: "#f5d0fe", fontSize: 10 }
-            : { fill: "#a1a1aa", fontSize: 10 },
-          labelBgStyle: { fill: "#18181b" },
-          labelBgPadding: [4, 2],
-        };
-      }),
-    [edges]
-  );
+  const rfEdges = useMemo<RFEdge[]>(() => {
+    // Count edges per source so we can suppress labels when a parent has
+    // many children — 4+ stacked labels become unreadable, and the prompt
+    // text is also visible on the child node itself.
+    const sourceCount = new Map<string, number>();
+    for (const e of edges) sourceCount.set(e.from, (sourceCount.get(e.from) ?? 0) + 1);
+
+    return edges.map((e) => {
+      const isContribution = e.type === "contribution";
+      const isMerge = e.type === "merge";
+      const siblingsCount = sourceCount.get(e.from) ?? 1;
+      // Suppress labels when 4+ siblings — they overlap and are noise.
+      // Truncate hard when 3 siblings so they fit.
+      const labelLimit = siblingsCount >= 4 ? 0 : siblingsCount === 3 ? 18 : 30;
+      const fullLabel = e.prompt_text || "";
+      const showLabel = labelLimit > 0 && fullLabel.length > 0;
+      return {
+        id: e.id,
+        source: e.from,
+        target: e.to,
+        type: "smoothstep",
+        animated: isContribution,
+        style: isContribution
+          ? { stroke: "#e879f9", strokeWidth: 2, strokeDasharray: "6 5" }
+          : isMerge
+          ? { stroke: "#d946ef", strokeWidth: 2.5 }
+          : undefined,
+        label: showLabel
+          ? fullLabel.slice(0, labelLimit) + (fullLabel.length > labelLimit ? "…" : "")
+          : undefined,
+        labelStyle: isContribution
+          ? { fill: "#f5d0fe", fontSize: 10 }
+          : { fill: "#a1a1aa", fontSize: 10 },
+        labelBgStyle: { fill: "#18181b" },
+        labelBgPadding: [4, 2],
+      };
+    });
+  }, [edges]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
@@ -184,7 +231,7 @@ export default function Canvas() {
         onNodeClick={(_, n) => setSelected(n.id)}
         onPaneClick={() => setSelected(null)}
         fitView
-        fitViewOptions={{ padding: 0.2, minZoom: 0.3, maxZoom: 1.2 }}
+        fitViewOptions={{ padding: FIT_VIEW_PADDING_FOR_PROMPTBAR, minZoom: 0.3, maxZoom: 1.0 }}
         minZoom={0.1}
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
@@ -194,5 +241,13 @@ export default function Canvas() {
         <MiniMap pannable zoomable nodeColor={() => "#71717a"} maskColor="rgba(0,0,0,0.6)" />
       </ReactFlow>
     </div>
+  );
+}
+
+export default function Canvas() {
+  return (
+    <ReactFlowProvider>
+      <CanvasInner />
+    </ReactFlowProvider>
   );
 }

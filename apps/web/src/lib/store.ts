@@ -42,6 +42,10 @@ type UIState = {
   contextPanelOpen: boolean;
   includeArchived: boolean;
   busy: boolean;
+  // Cumulative session token usage. Updated by SSE handlers when a job
+  // returns a `token_usage` payload — gives the user a running estimate of
+  // how much they've spent in the current browser session.
+  sessionUsage: { input: number; output: number; cache_read: number; cache_creation: number };
 
   // actions
   setTree: (project: ProjectDTO | null, nodes: NodeDTO[], edges: EdgeDTO[]) => void;
@@ -74,6 +78,7 @@ type UIState = {
   setBusy: (b: boolean) => void;
   upsertNode: (n: NodeDTO) => void;
   addEdge: (e: EdgeDTO) => void;
+  addUsage: (usage: { input?: number; output?: number; cache_read?: number; cache_creation?: number }) => void;
 };
 
 export const useUI = create<UIState>((set) => ({
@@ -100,6 +105,7 @@ export const useUI = create<UIState>((set) => ({
   contextPanelOpen: false,
   includeArchived: false,
   busy: false,
+  sessionUsage: { input: 0, output: 0, cache_read: 0, cache_creation: 0 },
 
   setTree: (project, nodes, edges) => set({ project, nodes, edges }),
   setProject: (project) => set({ project }),
@@ -142,5 +148,14 @@ export const useUI = create<UIState>((set) => ({
   addEdge: (e) =>
     set((s) => ({
       edges: s.edges.some((x) => x.id === e.id) ? s.edges : [...s.edges, e],
+    })),
+  addUsage: (usage) =>
+    set((s) => ({
+      sessionUsage: {
+        input: s.sessionUsage.input + (usage.input ?? 0),
+        output: s.sessionUsage.output + (usage.output ?? 0),
+        cache_read: s.sessionUsage.cache_read + (usage.cache_read ?? 0),
+        cache_creation: s.sessionUsage.cache_creation + (usage.cache_creation ?? 0),
+      },
     })),
 }));

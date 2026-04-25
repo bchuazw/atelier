@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Palette,
   Plus,
@@ -31,6 +31,7 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
     openCritics,
     includeArchived,
     setIncludeArchived,
+    sessionUsage,
   } = useUI();
 
   const targetId = useMemo(() => {
@@ -78,6 +79,17 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
   const archivedCount = project?.archived_count ?? 0;
   const hasCheckpoint = !!project?.active_checkpoint_id;
 
+  // Rough session-cost estimate using Sonnet-4.6 list pricing as the
+  // weighted-average proxy ($3 / 1M input, $15 / 1M output, $0.30 / 1M cached
+  // read, $3.75 / 1M cache-write). Genuine costs vary with model mix; this
+  // is a "you've used roughly $X" indicator, not an invoice.
+  const sessionCostUsd =
+    (sessionUsage.input * 3 +
+      sessionUsage.output * 15 +
+      sessionUsage.cache_read * 0.3 +
+      sessionUsage.cache_creation * 3.75) /
+    1_000_000;
+
   return (
     <>
       <div className="flex items-center justify-between px-4 py-2 bg-stone-50 border-b border-zinc-200 h-12">
@@ -89,13 +101,7 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
           <div className="w-px h-5 bg-zinc-100" />
           <div className="text-sm">
             {project ? (
-              <>
-                <span className="text-zinc-500">Project:</span>{" "}
-                <span className="text-zinc-900 font-medium">{project.name}</span>
-                {project.seed_url && (
-                  <span className="text-zinc-500 text-[11px] ml-2 font-mono">{project.seed_url}</span>
-                )}
-              </>
+              <ProjectNameInline name={project.name} projectId={project.id} seedUrl={project.seed_url} />
             ) : (
               <span className="text-zinc-500">No project loaded</span>
             )}
@@ -104,6 +110,21 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
 
         <div className="flex items-center gap-2 text-sm">
           <div className="text-[11px] text-zinc-500 mr-2">{nodes.length} nodes</div>
+          {sessionCostUsd > 0 && (
+            <div
+              className="text-[10px] text-zinc-500 font-mono px-2 py-0.5 rounded bg-zinc-100"
+              title={
+                `Session token usage:\n` +
+                `  input: ${sessionUsage.input.toLocaleString()}\n` +
+                `  output: ${sessionUsage.output.toLocaleString()}\n` +
+                `  cache read: ${sessionUsage.cache_read.toLocaleString()}\n` +
+                `  cache write: ${sessionUsage.cache_creation.toLocaleString()}\n\n` +
+                `Estimate uses Sonnet-4.6 list pricing as a proxy. Actual cost depends on model mix.`
+              }
+            >
+              ~${sessionCostUsd.toFixed(2)} this session
+            </div>
+          )}
           {canCompare && (
             <button
               onClick={openViewer}
@@ -246,6 +267,84 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
             </button>
           </div>
         </div>
+      )}
+    </>
+  );
+}
+
+/** Inline-editable project name. Click to edit, Enter / blur to save,
+ *  Escape to cancel. Optimistic update via PATCH /projects/:id { name }. */
+function ProjectNameInline({
+  name,
+  projectId,
+  seedUrl,
+}: {
+  name: string;
+  projectId: string;
+  seedUrl: string | null | undefined;
+}) {
+  const { setTree, project, includeArchived } = useUI();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(name);
+
+  useEffect(() => {
+    setDraft(name);
+  }, [name]);
+
+  async function commit() {
+    const next = draft.trim();
+    setEditing(false);
+    if (!next || next === name) {
+      setDraft(name);
+      return;
+    }
+    try {
+      await api.patchProject(projectId, { name: next });
+      // Refresh tree so the store's project.name updates everywhere.
+      const tree = await api.getTree(projectId, includeArchived);
+      setTree(tree.project as any, tree.nodes, tree.edges);
+    } catch (e) {
+      alert(`Rename failed: ${(e as Error).message}`);
+      setDraft(name);
+    }
+  }
+
+  if (editing) {
+    return (
+      <span className="inline-flex items-center gap-2">
+        <span className="text-zinc-500">Project:</span>
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") {
+              setDraft(name);
+              setEditing(false);
+            }
+          }}
+          maxLength={200}
+          className="px-2 py-0.5 rounded border border-amber-400 bg-white text-sm text-zinc-900 font-medium focus:outline-none focus:ring-2 focus:ring-amber-300"
+        />
+      </span>
+    );
+  }
+
+  return (
+    <>
+      <span className="text-zinc-500">Project:</span>{" "}
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        title="Click to rename"
+        className="text-zinc-900 font-medium hover:underline decoration-dotted underline-offset-2"
+      >
+        {name}
+      </button>
+      {seedUrl && (
+        <span className="text-zinc-500 text-[11px] ml-2 font-mono">{seedUrl}</span>
       )}
     </>
   );

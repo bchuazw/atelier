@@ -250,8 +250,11 @@ async def _run_merge_job_bg(job_id: str, target_id: str, body: MergeIn) -> None:
                 created_by="agent",
                 model_used=resp.model,
                 token_usage=resp.usage_dict,
-                position_x=(target.position_x + source.position_x) / 2.0 + 60.0,
-                position_y=max(target.position_y, source.position_y) + 260.0,
+                # Merge result sits visually between its two parents. If the
+                # target already has children, push down further so we don't
+                # collide with them.
+                position_x=(target.position_x + source.position_x) / 2.0,
+                position_y=max(target.position_y, source.position_y) + 290.0,
                 build_status="building",
             )
             session.add(new_node)

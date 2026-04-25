@@ -195,6 +195,11 @@ async def _run_pipeline(
         )
 
     # ── Step 2: allocate the new node row so we have its id for paths ─────────
+    # `next_child_position` keeps the new media variant from stacking on top
+    # of any existing prompt-fork siblings under the same parent.
+    from atelier_api.layout import next_child_position
+
+    media_x, media_y = await next_child_position(session, parent, bias_right=True)
     new_node = Node(
         project_id=parent.project_id,
         parent_id=parent.id,
@@ -202,8 +207,8 @@ async def _run_pipeline(
         title=None,
         summary=None,
         created_by="agent",
-        position_x=parent.position_x + 280.0,
-        position_y=parent.position_y + 260.0,
+        position_x=media_x,
+        position_y=media_y,
         build_status="building",
     )
     session.add(new_node)

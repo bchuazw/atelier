@@ -129,6 +129,11 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
           <div className="text-[10px] text-zinc-500 font-mono">{node.model_used}</div>
         )}
 
+        {/* Action buttons. Six total — Fork is the prominent primary, the
+            other five are icon-only with hover tooltips so they all fit a
+            260px card without truncation. Compare is special-cased when
+            it's already in the A/B selection so the label tells the user
+            what to click next. */}
         <div className="flex items-center gap-1 pt-1.5">
           <button
             onClick={(e) => {
@@ -136,27 +141,15 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
               openFork(node.id);
             }}
             disabled={node.build_status !== "ready"}
-            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-amber-600/20 hover:bg-amber-600/40 text-amber-700 disabled:opacity-40"
+            title="Fork this variant — type a prompt and Claude rewrites the HTML"
+            className="flex-1 flex items-center justify-center gap-1 text-[11px] px-2 py-1 rounded bg-amber-500 hover:bg-amber-400 text-black font-medium disabled:opacity-40"
           >
             <GitFork className="w-3 h-3" /> Fork
           </button>
+
           <button
             onClick={(e) => {
               e.stopPropagation();
-              openMedia(node.id);
-            }}
-            disabled={node.build_status !== "ready"}
-            title="Generate hero media (Claude → Genspark → Claude)"
-            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-fuchsia-100 hover:bg-fuchsia-200 text-fuchsia-700 disabled:opacity-40"
-          >
-            <Wand2 className="w-3 h-3" /> Hero
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              // Click 1: this node becomes A. Click 2 (on a different node):
-              // that becomes B and the split viewer opens. Click again on
-              // either selected node: reset and start over from this one.
               if (isA || isB) {
                 setCompareA(node.id);
                 setCompareB(null);
@@ -166,7 +159,6 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
                 setCompareB(node.id);
                 openViewer();
               } else {
-                // Both slots full — swap B for this node and re-open the viewer.
                 setCompareB(node.id);
                 openViewer();
               }
@@ -181,58 +173,106 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
                 : "Step 2 of compare: pin as B and open split viewer"
             }
             className={clsx(
-              "flex items-center gap-1 text-[11px] px-2 py-1 rounded",
+              "flex items-center gap-1 text-[11px] px-2 py-1 rounded font-medium",
               isA || isB
                 ? "bg-cyan-500 text-white"
+                : compare.a
+                ? "bg-cyan-100 hover:bg-cyan-200 text-cyan-700"
                 : "bg-cyan-100 hover:bg-cyan-200 text-cyan-700"
             )}
           >
             <Columns className="w-3 h-3" />
-            {isA
-              ? "A — pick B"
-              : isB
-              ? "B — pick A"
-              : compare.a
-              ? "Compare ·B"
-              : "Compare"}
+            {isA ? "A — pick B" : isB ? "B — pick A" : compare.a ? "B" : "Compare"}
           </button>
-          <button
-            onClick={setAsCheckpoint}
-            title="Set as checkpoint — archive older history, make this the new working head"
-            disabled={isCheckpoint}
-            className={clsx(
-              "flex items-center gap-1 text-[11px] px-2 py-1 rounded",
-              isCheckpoint
-                ? "bg-fuchsia-200 text-fuchsia-700 cursor-default"
-                : "bg-fuchsia-100 hover:bg-fuchsia-200 text-fuchsia-700"
-            )}
+        </div>
+
+        {/* Secondary actions — icon-only with tooltips, all five fit in a
+            single 260px row. */}
+        <div className="flex items-center gap-1 pt-1">
+          <IconButton
+            onClick={(e) => {
+              e.stopPropagation();
+              openMedia(node.id);
+            }}
+            disabled={node.build_status !== "ready"}
+            title="Generate hero media (MiniMax image/video, then Claude weaves it in)"
+            tone="fuchsia"
           >
-            <Anchor className="w-3 h-3" /> {isCheckpoint ? "Head" : "Checkpoint"}
-          </button>
-          <button
+            <Wand2 className="w-3.5 h-3.5" />
+          </IconButton>
+          <IconButton
+            onClick={setAsCheckpoint}
+            disabled={isCheckpoint}
+            title={
+              isCheckpoint
+                ? "This is the active checkpoint — older history is archived"
+                : "Set as checkpoint — archive older history, make this the new working head"
+            }
+            tone="fuchsia"
+            active={isCheckpoint}
+          >
+            <Anchor className="w-3.5 h-3.5" />
+          </IconButton>
+          <IconButton
             onClick={(e) => {
               e.stopPropagation();
               openExport(node.id);
             }}
             disabled={node.build_status !== "ready"}
-            title="Copy the HTML out — take it to Cursor or your editor of choice"
-            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-amber-100 hover:bg-amber-200 text-amber-700 disabled:opacity-40"
+            title="Export — copy the HTML or download .zip with all media"
+            tone="amber"
           >
-            <Download className="w-3 h-3" /> Export
-          </button>
+            <Download className="w-3.5 h-3.5" />
+          </IconButton>
           {node.sandbox_url && (
             <a
               href={node.sandbox_url}
               target="_blank"
               rel="noreferrer"
               onClick={(e) => e.stopPropagation()}
-              className="flex items-center gap-1 text-[11px] px-2 py-1 rounded bg-zinc-200/40 hover:bg-zinc-200/70 text-zinc-700 ml-auto"
+              title="Open the rendered page in a new tab"
+              className="flex items-center justify-center w-7 h-7 rounded bg-zinc-100 hover:bg-zinc-200 text-zinc-600 ml-auto"
             >
-              <Eye className="w-3 h-3" /> Open
+              <Eye className="w-3.5 h-3.5" />
             </a>
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+function IconButton({
+  children,
+  onClick,
+  disabled,
+  title,
+  tone,
+  active,
+}: {
+  children: React.ReactNode;
+  onClick: (e: React.MouseEvent) => void;
+  disabled?: boolean;
+  title: string;
+  tone: "fuchsia" | "amber";
+  active?: boolean;
+}) {
+  const colors = active
+    ? "bg-fuchsia-300 text-fuchsia-800 cursor-default"
+    : tone === "fuchsia"
+    ? "bg-fuchsia-100 hover:bg-fuchsia-200 text-fuchsia-700"
+    : "bg-amber-100 hover:bg-amber-200 text-amber-700";
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className={clsx(
+        "flex items-center justify-center w-7 h-7 rounded disabled:opacity-40",
+        colors
+      )}
+    >
+      {children}
+    </button>
   );
 }

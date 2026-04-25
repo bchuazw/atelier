@@ -26,6 +26,11 @@ class ProjectOut(BaseModel):
     seed_url: str | None
     working_node_id: str | None
     created_at: str
+    # Lightweight metadata for the recent-projects list — populated only by
+    # `list_projects` (the per-project `tree` endpoint already returns the
+    # full node graph so it doesn't need them).
+    node_count: int = 0
+    last_activity: str | None = None  # ISO string; defaults to created_at
 
 
 class ProjectPatchIn(BaseModel):
@@ -33,6 +38,7 @@ class ProjectPatchIn(BaseModel):
     context: str | None = None
     active_checkpoint_id: str | None = None
     clear_checkpoint: bool | None = None
+    name: str | None = None  # rename the project (validated in route)
 
 
 @router.post("", response_model=ProjectOut)
@@ -94,13 +100,40 @@ async def create_project(body: CreateProjectIn, session: AsyncSession = Depends(
 
 @router.get("", response_model=list[ProjectOut])
 async def list_projects(session: AsyncSession = Depends(get_session)):
+    from sqlalchemy import func as sql_func
+
     rows = (await session.execute(select(Project).order_by(Project.created_at.desc()))).scalars().all()
-    return [
-        ProjectOut(
-            id=p.id, name=p.name, seed_url=p.seed_url, working_node_id=p.working_node_id, created_at=p.created_at
+
+    # Attach per-project node_count + last_activity in one batched query so
+    # the recent-projects panel can show useful metadata without N+1 calls.
+    if rows:
+        ids = [p.id for p in rows]
+        meta = (
+            await session.execute(
+                select(Node.project_id, sql_func.count(Node.id), sql_func.max(Node.created_at))
+                .where(Node.project_id.in_(ids))
+                .group_by(Node.project_id)
+            )
+        ).all()
+        meta_by_id = {row[0]: (int(row[1]), row[2]) for row in meta}
+    else:
+        meta_by_id = {}
+
+    out: list[ProjectOut] = []
+    for p in rows:
+        node_count, last_activity = meta_by_id.get(p.id, (0, None))
+        out.append(
+            ProjectOut(
+                id=p.id,
+                name=p.name,
+                seed_url=p.seed_url,
+                working_node_id=p.working_node_id,
+                created_at=p.created_at,
+                node_count=node_count,
+                last_activity=last_activity or p.created_at,
+            )
         )
-        for p in rows
-    ]
+    return out
 
 
 @router.get("/{project_id}/tree")
@@ -234,9 +267,15 @@ async def patch_project(
             raise HTTPException(status_code=400, detail="Checkpoint node not in this project")
         current["active_checkpoint_id"] = body.active_checkpoint_id
     project.settings = current
+    if body.name is not None:
+        new_name = body.name.strip()
+        if not new_name or len(new_name) > 200:
+            raise HTTPException(status_code=400, detail="Project name must be 1–200 characters.")
+        project.name = new_name
     await session.commit()
     return {
         "ok": True,
+        "name": project.name,
         "context": current.get("context", ""),
         "active_checkpoint_id": current.get("active_checkpoint_id"),
     }
