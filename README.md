@@ -264,15 +264,6 @@ To deploy:
 | ![Full-page side-by-side viewer](docs/screenshots/viewer-side-by-side.png) | ![Template picker with vibe chips](docs/screenshots/ux-fixes-new-project.png) |
 | **Compare viewer** — Side-by-side shows both FULL pages scaled to fit (no cropped halves). Also has Split and Overlay modes + Desktop/Tablet/Mobile viewports via keyboard shortcuts. | **Template picker** — 6 curated aesthetic starters with vibe chips (PREMIUM / BRUTALIST / CALM / FUTURISTIC / RETRO / PLAYFUL). Each card renders a live iframe of the actual HTML. |
 
-## Status (2026-04-24)
-
-- ✅ Feature-complete for submission (cycles 1–7)
-- ✅ Local stack: fork, media, merge, feedback, critics (with Genspark grounding), drag-to-combine, export, compare, checkpoint — all verified end-to-end
-- ✅ Render deploy: web + sandbox + API all live. Frontend at [atelier-web.onrender.com](https://atelier-web.onrender.com), API at `atelier-api-wpx8.onrender.com`
-- ✅ 2-minute demo video with ElevenLabs narration (see [demo-video/final-plan.md](demo-video/final-plan.md))
-
-See [PLAN.md](PLAN.md) for the cycle-by-cycle build log and architectural decisions.
-
 ---
 
 ## License
