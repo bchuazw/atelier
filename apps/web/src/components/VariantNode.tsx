@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Handle, Position, type NodeProps } from "reactflow";
 import clsx from "clsx";
 import type { NodeDTO } from "@/lib/api";
@@ -11,6 +12,9 @@ import {
   Wand2,
   Download,
   Columns,
+  Trash2,
+  RotateCw,
+  Pencil,
 } from "lucide-react";
 
 export type VariantNodeData = {
@@ -54,6 +58,13 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
   const isB = compare.b === node.id;
   const isCheckpoint = !!node.is_checkpoint;
 
+  // Inline rename state — same pattern as project name in TopBar.
+  const [renaming, setRenaming] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(node.title || "");
+  useEffect(() => {
+    setDraftTitle(node.title || "");
+  }, [node.title]);
+
   async function setAsCheckpoint(e: React.MouseEvent) {
     e.stopPropagation();
     if (!project) return;
@@ -66,6 +77,53 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
     await api.patchProject(project.id, { active_checkpoint_id: node.id });
     const tree = await api.getTree(project.id, includeArchived);
     setTree(tree.project, tree.nodes, tree.edges);
+  }
+
+  async function commitRename() {
+    const next = draftTitle.trim();
+    setRenaming(false);
+    if (!next || next === (node.title || "")) {
+      setDraftTitle(node.title || "");
+      return;
+    }
+    try {
+      await api.patchNode(node.id, { title: next });
+      // Optimistic update: rewrite the node in the store so the rename
+      // shows up instantly without a tree refresh.
+      useUI.getState().upsertNode({ ...node, title: next });
+    } catch (e) {
+      alert(`Rename failed: ${(e as Error).message}`);
+      setDraftTitle(node.title || "");
+    }
+  }
+
+  async function deleteVariant(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!project) return;
+    const subtreeWord = "this variant + every child branch under it";
+    if (!confirm(`Delete "${node.title || "this node"}"? This removes ${subtreeWord}. Cannot be undone.`))
+      return;
+    try {
+      await api.deleteNode(node.id);
+      const tree = await api.getTree(project.id, includeArchived);
+      setTree(tree.project, tree.nodes, tree.edges);
+    } catch (err) {
+      alert(`Delete failed: ${(err as Error).message}`);
+    }
+  }
+
+  function reRun(e: React.MouseEvent) {
+    // "Re-run" opens the Fork dialog rooted at this node's PARENT, with
+    // the prompt prefilled from this node's reasoning. Model can be
+    // swapped in the dialog. Useful for "I liked this prompt — try it
+    // on Opus" without retyping.
+    e.stopPropagation();
+    const parentId = node.parent_id;
+    const prompt = node.reasoning?.prompt || "";
+    if (!parentId) return; // seed has no parent — Re-run not applicable
+    // Stash the prefilled prompt on the store so ForkDialog can pick it up.
+    useUI.getState().setForkPrefill(prompt);
+    openFork(parentId);
   }
 
   return (
@@ -119,11 +177,38 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
       </div>
 
       <div className="p-3 space-y-1.5">
-        <div className="text-[13px] font-medium leading-tight">
-          <span className="line-clamp-2 break-words" title={node.title || "Untitled"}>
-            {node.title || "Untitled"}
-          </span>
-        </div>
+        {renaming ? (
+          <input
+            autoFocus
+            value={draftTitle}
+            onChange={(e) => setDraftTitle(e.target.value)}
+            onBlur={commitRename}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Enter") commitRename();
+              if (e.key === "Escape") {
+                setDraftTitle(node.title || "");
+                setRenaming(false);
+              }
+            }}
+            maxLength={120}
+            className="w-full text-[13px] font-medium leading-tight px-1.5 py-0.5 rounded border border-amber-400 bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
+          />
+        ) : (
+          <div
+            className="text-[13px] font-medium leading-tight group/title"
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              if (node.type !== "seed") setRenaming(true);
+            }}
+            title={node.type === "seed" ? node.title || "Untitled" : "Double-click to rename"}
+          >
+            <span className="line-clamp-2 break-words">
+              {node.title || "Untitled"}
+            </span>
+          </div>
+        )}
 
         {/* Genspark provenance: when this variant was applied from a
             grounded critic run, show small citation chips so designers
@@ -273,6 +358,41 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
             </a>
           )}
         </div>
+
+        {/* Tertiary CRUD row — variant-only. Hidden on the seed since
+            "rename / delete / re-run" don't apply: seed renames via the
+            project-level rename, deletes via project delete, and has no
+            parent prompt to re-run. */}
+        {node.type !== "seed" && (
+          <div className="flex items-center gap-1 pt-1">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setRenaming(true);
+              }}
+              title="Rename this variant"
+              className="flex items-center justify-center w-7 h-7 rounded bg-zinc-50 hover:bg-zinc-100 text-zinc-500"
+            >
+              <Pencil className="w-3 h-3" />
+            </button>
+            {node.reasoning?.prompt && node.parent_id && (
+              <button
+                onClick={reRun}
+                title={`Re-run with same prompt (${(node.reasoning.prompt || "").slice(0, 80)}…) — model can be swapped`}
+                className="flex items-center justify-center w-7 h-7 rounded bg-zinc-50 hover:bg-zinc-100 text-zinc-500"
+              >
+                <RotateCw className="w-3 h-3" />
+              </button>
+            )}
+            <button
+              onClick={deleteVariant}
+              title="Delete this variant + every child branch under it"
+              className="flex items-center justify-center w-7 h-7 rounded bg-zinc-50 hover:bg-rose-100 hover:text-rose-600 text-zinc-500 ml-auto"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

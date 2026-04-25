@@ -64,6 +64,87 @@ async def patch_node(node_id: str, body: NodePatchIn, session: AsyncSession = De
     return {"ok": True}
 
 
+@router.delete("/{node_id}")
+async def delete_node(node_id: str, session: AsyncSession = Depends(get_session)):
+    """Delete a single variant + every descendant under it.
+
+    Seeds can't be deleted via this route (delete the project instead).
+    Removes nodes from DB, drops associated edges, and best-effort cleans
+    up the variant tree from object storage.
+    """
+    from sqlalchemy import select
+
+    from atelier_api.db.models import Edge, Project
+
+    node = await session.get(Node, node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found")
+    if node.type == "seed":
+        raise HTTPException(
+            status_code=400,
+            detail="Can't delete the seed. Delete the project to remove the seed and all variants.",
+        )
+
+    # Walk the descendant subtree so we delete a node + all its forks +
+    # their forks. parent_id is single-parent; merge edges (multi-parent)
+    # are NOT followed here — a merge child whose `parent_id` is a
+    # different node remains intact, just losing one of its contribution
+    # edges below.
+    project_id = node.project_id
+    to_delete: list[str] = [node.id]
+    frontier = [node.id]
+    while frontier:
+        current = frontier.pop()
+        children = (
+            await session.execute(select(Node.id).where(Node.parent_id == current))
+        ).all()
+        for (cid,) in children:
+            if cid not in to_delete:
+                to_delete.append(cid)
+                frontier.append(cid)
+
+    # If the working_node_id pointed at any node we're about to delete,
+    # reset it so the project doesn't end up with a dangling reference.
+    project = await session.get(Project, project_id)
+    if project and project.working_node_id in to_delete:
+        project.working_node_id = None
+    if project and project.settings and project.settings.get("active_checkpoint_id") in to_delete:
+        new_settings = dict(project.settings)
+        new_settings.pop("active_checkpoint_id", None)
+        project.settings = new_settings
+
+    # Drop edges that point at any deleted node; SQLite without ON DELETE
+    # CASCADE on every edge wouldn't pick up automatically.
+    if to_delete:
+        edges_to_remove = (
+            await session.execute(
+                select(Edge).where(
+                    (Edge.from_node_id.in_(to_delete)) | (Edge.to_node_id.in_(to_delete))
+                )
+            )
+        ).scalars().all()
+        for e in edges_to_remove:
+            await session.delete(e)
+
+    for nid in to_delete:
+        n = await session.get(Node, nid)
+        if n is not None:
+            await session.delete(n)
+    await session.commit()
+
+    # Best-effort storage cleanup; failures don't roll back the DB delete.
+    cleaned = 0
+    failed: list[str] = []
+    for nid in to_delete:
+        try:
+            await storage.delete_variant_tree(nid)
+            cleaned += 1
+        except Exception as e:  # pragma: no cover — defensive
+            failed.append(f"{nid}: {e}")
+
+    return {"ok": True, "deleted": len(to_delete), "storage_cleaned": cleaned, "storage_failed": failed}
+
+
 @router.get("/{node_id}/export")
 async def export_node(node_id: str, session: AsyncSession = Depends(get_session)):
     """Return everything needed to take this variant elsewhere.

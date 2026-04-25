@@ -189,6 +189,10 @@ async def fork_node(parent_id: str, body: ForkIn, session: AsyncSession = Depend
                 "reasoning": meta.get("reasoning", ""),
                 "shootout": body.shootout,
                 "model_key": models_to_run[i],
+                # Concrete diffs Claude declared (added in the variance-
+                # tightened system prompt). Used by VariantNode to show
+                # "what actually changed" chips on the card.
+                "changes": meta.get("changes", []),
             },
             created_by="agent",
             model_used=resp.model,

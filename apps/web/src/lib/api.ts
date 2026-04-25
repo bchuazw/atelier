@@ -297,6 +297,8 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
+  deleteNode: (nodeId: string) =>
+    request<{ ok: boolean; deleted: number }>(`/nodes/${nodeId}`, { method: "DELETE" }),
   getAncestors: (nodeId: string) =>
     request<{ chain: { id: string; title: string | null; type: string }[] }>(`/nodes/${nodeId}/ancestors`),
   setApiKey: (api_key: string) =>

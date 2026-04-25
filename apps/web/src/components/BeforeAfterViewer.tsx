@@ -7,9 +7,12 @@ import {
   Columns,
   Layers,
   SplitSquareHorizontal,
+  Microscope,
+  ExternalLink,
 } from "lucide-react";
 import clsx from "clsx";
 import { useUI } from "@/lib/store";
+import { computeStyleDiff, extractColors, type StyleDiff } from "@/lib/diffStyles";
 
 type Viewport = "desktop" | "tablet" | "mobile";
 const VIEWPORT_WIDTH: Record<Viewport, number> = {
@@ -31,12 +34,42 @@ export default function BeforeAfterViewer() {
   const [viewport, setViewport] = useState<Viewport>("desktop");
   const [mode, setMode] = useState<Mode>("side");
   const [spaceHeld, setSpaceHeld] = useState(false);
+  const [showDiff, setShowDiff] = useState(false);
+  const [diff, setDiff] = useState<StyleDiff[]>([]);
+  const [diffLoading, setDiffLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [stageSize, setStageSize] = useState({ w: 1200, h: 800 });
 
   const nodeA = useMemo(() => nodes.find((n) => n.id === compare.a), [nodes, compare.a]);
   const nodeB = useMemo(() => nodes.find((n) => n.id === compare.b), [nodes, compare.b]);
+
+  // Diff lens: fetch both variant HTMLs and compute style deltas. Triggered
+  // on demand (showDiff toggle) so we don't pay the round-trip when users
+  // are just visually comparing in side-by-side mode.
+  useEffect(() => {
+    if (!showDiff) return;
+    if (!nodeA?.sandbox_url || !nodeB?.sandbox_url) return;
+    let cancelled = false;
+    setDiffLoading(true);
+    Promise.all([
+      fetch(nodeA.sandbox_url).then((r) => r.text()),
+      fetch(nodeB.sandbox_url).then((r) => r.text()),
+    ])
+      .then(([a, b]) => {
+        if (cancelled) return;
+        setDiff(computeStyleDiff(a, b));
+      })
+      .catch(() => {
+        if (!cancelled) setDiff([]);
+      })
+      .finally(() => {
+        if (!cancelled) setDiffLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showDiff, nodeA?.sandbox_url, nodeB?.sandbox_url]);
 
   useEffect(() => {
     if (!viewerOpen) return;
@@ -196,10 +229,30 @@ export default function BeforeAfterViewer() {
           <VPButton active={viewport === "mobile"} onClick={() => setViewport("mobile")} title="Mobile (3)">
             <Smartphone className="w-4 h-4" />
           </VPButton>
+
+          <span className="text-zinc-300">|</span>
+
+          {/* Diff lens — exposes the typography / palette / spacing /
+              effects deltas as a side panel. Toggleable so users can keep
+              the visual side-by-side full-width when they want it. */}
+          <button
+            onClick={() => setShowDiff((v) => !v)}
+            title="Diff lens — show what CSS properties changed between A and B"
+            className={clsx(
+              "flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition",
+              showDiff
+                ? "bg-cyan-500 text-white"
+                : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
+            )}
+          >
+            <Microscope className="w-4 h-4" />
+            Diff lens
+          </button>
         </div>
       </div>
 
-      {/* Stage */}
+      {/* Stage + optional diff sidebar */}
+      <div className="flex-1 flex overflow-hidden">
       <div ref={stageRef} className="flex-1 overflow-auto bg-zinc-100">
         {mode === "side" && (
           <div className="min-h-full flex items-start justify-center p-4 gap-6">
@@ -327,6 +380,8 @@ export default function BeforeAfterViewer() {
             </div>
           </div>
         )}
+      </div>
+      {showDiff && <DiffPanel diff={diff} loading={diffLoading} nodeATitle={nodeA?.title || "A"} nodeBTitle={nodeB?.title || "B"} />}
       </div>
 
       {/* Bottom status */}
@@ -462,5 +517,133 @@ function VPButton({
     >
       {children}
     </button>
+  );
+}
+
+const CATEGORY_LABEL: Record<StyleDiff["category"], string> = {
+  typography: "Typography",
+  palette: "Palette",
+  spacing: "Spacing",
+  effects: "Effects",
+  layout: "Layout",
+};
+
+const CATEGORY_TONE: Record<StyleDiff["category"], string> = {
+  typography: "bg-amber-50 border-amber-200 text-amber-800",
+  palette: "bg-rose-50 border-rose-200 text-rose-800",
+  spacing: "bg-cyan-50 border-cyan-200 text-cyan-800",
+  effects: "bg-fuchsia-50 border-fuchsia-200 text-fuchsia-800",
+  layout: "bg-zinc-50 border-zinc-200 text-zinc-700",
+};
+
+function DiffPanel({
+  diff,
+  loading,
+  nodeATitle,
+  nodeBTitle,
+}: {
+  diff: StyleDiff[];
+  loading: boolean;
+  nodeATitle: string;
+  nodeBTitle: string;
+}) {
+  // Group rows by category for the rendered list.
+  const grouped = useMemo(() => {
+    const map = new Map<StyleDiff["category"], StyleDiff[]>();
+    for (const d of diff) {
+      const list = map.get(d.category) ?? [];
+      list.push(d);
+      map.set(d.category, list);
+    }
+    return Array.from(map.entries());
+  }, [diff]);
+
+  return (
+    <div className="w-[360px] flex-shrink-0 bg-white border-l border-zinc-200 overflow-y-auto">
+      <div className="px-4 py-3 border-b border-zinc-200 sticky top-0 bg-white z-10">
+        <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-medium">
+          What changed
+        </div>
+        <div className="text-[12px] text-zinc-700 mt-0.5">
+          <span className="font-medium">{nodeATitle}</span>
+          <span className="text-zinc-400 mx-1">→</span>
+          <span className="font-medium">{nodeBTitle}</span>
+        </div>
+      </div>
+      {loading ? (
+        <div className="p-4 text-[12px] text-zinc-500">Computing diff…</div>
+      ) : diff.length === 0 ? (
+        <div className="p-4 text-[12px] text-zinc-500">
+          No tracked CSS properties changed between A and B. (We diff
+          typography, palette, spacing, effects, and a few layout props —
+          structural HTML changes won't show here.)
+        </div>
+      ) : (
+        <div className="p-3 space-y-3">
+          {grouped.map(([cat, rows]) => (
+            <div key={cat}>
+              <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium mb-1.5">
+                {CATEGORY_LABEL[cat]} · {rows.length}
+              </div>
+              <div className="space-y-1.5">
+                {rows.map((d, i) => (
+                  <DiffRow key={`${d.selector}|${d.property}|${i}`} d={d} cat={cat} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DiffRow({ d, cat }: { d: StyleDiff; cat: StyleDiff["category"] }) {
+  const beforeColors = extractColors(d.before);
+  const afterColors = extractColors(d.after);
+  const showSwatches = cat === "palette" && (beforeColors.length || afterColors.length);
+  return (
+    <div
+      className={clsx(
+        "rounded border px-2 py-1.5 text-[11px]",
+        CATEGORY_TONE[cat]
+      )}
+    >
+      <div className="flex items-center justify-between gap-2 mb-0.5">
+        <code className="font-mono text-[10px] truncate" title={d.selector}>
+          {d.selector}
+        </code>
+        <span className="text-[9px] uppercase tracking-wider opacity-70 flex-shrink-0">
+          {d.property}
+        </span>
+      </div>
+      <div className="flex items-center gap-2 text-[11px]">
+        <div className="flex items-center gap-1 flex-1 min-w-0">
+          {showSwatches &&
+            beforeColors.slice(0, 2).map((c, i) => (
+              <span
+                key={`b-${i}`}
+                className="inline-block w-3 h-3 rounded border border-zinc-300 flex-shrink-0"
+                style={{ background: c }}
+                title={c}
+              />
+            ))}
+          <span className="font-mono text-[10px] truncate text-zinc-500">{d.before ?? "—"}</span>
+        </div>
+        <span className="text-zinc-400">→</span>
+        <div className="flex items-center gap-1 flex-1 min-w-0">
+          {showSwatches &&
+            afterColors.slice(0, 2).map((c, i) => (
+              <span
+                key={`a-${i}`}
+                className="inline-block w-3 h-3 rounded border border-zinc-300 flex-shrink-0"
+                style={{ background: c }}
+                title={c}
+              />
+            ))}
+          <span className="font-mono text-[10px] truncate font-medium">{d.after ?? "—"}</span>
+        </div>
+      </div>
+    </div>
   );
 }

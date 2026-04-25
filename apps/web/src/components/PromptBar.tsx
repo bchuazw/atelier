@@ -28,14 +28,30 @@ function loadRecentPrompts(projectId: string | null | undefined): string[] {
   }
 }
 
+/** Normalize a prompt for dedupe — lower-cased + whitespace collapsed.
+ *  Two prompts that differ only in casing or extra spaces shouldn't
+ *  show up as separate chips. */
+function dedupeKey(p: string): string {
+  return p.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
 function saveRecentPrompt(projectId: string, prompt: string) {
   try {
-    const existing = loadRecentPrompts(projectId).filter((p) => p !== prompt);
-    const next = [prompt, ...existing].slice(0, MAX_RECENT_PROMPTS);
+    const key = dedupeKey(prompt);
+    const existing = loadRecentPrompts(projectId).filter((p) => dedupeKey(p) !== key);
+    const next = [prompt.trim(), ...existing].slice(0, MAX_RECENT_PROMPTS);
     localStorage.setItem(RECENT_PROMPTS_KEY(projectId), JSON.stringify(next));
   } catch {
     // localStorage full or disabled — silently skip; recent-prompts is a
     // nice-to-have, not load-bearing.
+  }
+}
+
+function clearRecentPrompts(projectId: string) {
+  try {
+    localStorage.removeItem(RECENT_PROMPTS_KEY(projectId));
+  } catch {
+    // ignore
   }
 }
 
@@ -204,6 +220,19 @@ export default function PromptBar() {
                       {c}
                     </button>
                   ))}
+                  <button
+                    onClick={() => {
+                      if (project?.id) {
+                        clearRecentPrompts(project.id);
+                        setRecentPrompts([]);
+                      }
+                    }}
+                    disabled={running}
+                    title="Clear recent prompts for this project"
+                    className="text-[10px] text-zinc-400 hover:text-zinc-700 px-1"
+                  >
+                    clear
+                  </button>
                   <span className="w-px h-4 bg-zinc-200 mx-1" />
                 </>
               )}

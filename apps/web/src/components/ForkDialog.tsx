@@ -19,7 +19,7 @@ const PRESETS = [
 ];
 
 export default function ForkDialog() {
-  const { forkDialogOpen, forkParentId, closeFork, nodes, openViewer, setCompareA, setCompareB, includeArchived } = useUI();
+  const { forkDialogOpen, forkParentId, forkPrefill, closeFork, nodes, openViewer, setCompareA, setCompareB, includeArchived } = useUI();
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState("sonnet");
   const [n, setN] = useState(1);
@@ -27,14 +27,19 @@ export default function ForkDialog() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Reset on close. On open, if a prefill prompt is queued (Re-run from a
+  // variant card), seed the textarea with it so the user can tweak the
+  // model + go without retyping.
   useEffect(() => {
     if (!forkDialogOpen) {
       setPrompt("");
       setError(null);
       setRunning(false);
       setShootout(false);
+    } else if (forkPrefill) {
+      setPrompt(forkPrefill);
     }
-  }, [forkDialogOpen]);
+  }, [forkDialogOpen, forkPrefill]);
 
   if (!forkDialogOpen || !forkParentId) return null;
 

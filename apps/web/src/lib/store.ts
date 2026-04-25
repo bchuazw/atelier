@@ -27,6 +27,10 @@ type UIState = {
   viewerOpen: boolean;
   forkDialogOpen: boolean;
   forkParentId: string | null;
+  // Optional prompt to prefill when ForkDialog opens — used by the
+  // Re-run action on a variant card so "fork the parent with the same
+  // prompt" doesn't require retyping.
+  forkPrefill: string | null;
   mediaDialogOpen: boolean;
   mediaParentId: string | null;
   feedbackDialogOpen: boolean;
@@ -53,6 +57,7 @@ type UIState = {
   setSelected: (id: string | null) => void;
   openFork: (parentId: string) => void;
   closeFork: () => void;
+  setForkPrefill: (prompt: string | null) => void;
   openMedia: (parentId: string) => void;
   closeMedia: () => void;
   openFeedback: (targetId: string) => void;
@@ -90,6 +95,7 @@ export const useUI = create<UIState>((set) => ({
   viewerOpen: false,
   forkDialogOpen: false,
   forkParentId: null,
+  forkPrefill: null,
   mediaDialogOpen: false,
   mediaParentId: null,
   feedbackDialogOpen: false,
@@ -111,7 +117,8 @@ export const useUI = create<UIState>((set) => ({
   setProject: (project) => set({ project }),
   setSelected: (id) => set({ selectedNodeId: id }),
   openFork: (parentId) => set({ forkDialogOpen: true, forkParentId: parentId }),
-  closeFork: () => set({ forkDialogOpen: false, forkParentId: null }),
+  closeFork: () => set({ forkDialogOpen: false, forkParentId: null, forkPrefill: null }),
+  setForkPrefill: (prompt) => set({ forkPrefill: prompt }),
   openMedia: (parentId) => set({ mediaDialogOpen: true, mediaParentId: parentId }),
   closeMedia: () => set({ mediaDialogOpen: false, mediaParentId: null }),
   openFeedback: (targetId) => set({ feedbackDialogOpen: true, feedbackTargetId: targetId }),
