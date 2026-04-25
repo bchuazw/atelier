@@ -38,9 +38,11 @@ export default function App() {
       });
   }, []);
 
-  // Global keyboard shortcuts. Only fire when no input/textarea is focused
-  // and no modal is open — we don't want "F" to also typed-into the
-  // PromptBar textarea or interrupt typing in any dialog.
+  // Global keyboard shortcuts. Require Shift on letter keys so a stray
+  // bare-letter keystroke while panning the canvas can't open dialogs
+  // back-to-back (a designer ran into this, pressing C/F/B in rapid
+  // succession opened multiple modals chained on top of each other).
+  // Also skip when an input/textarea is focused or a dialog is open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
@@ -65,6 +67,30 @@ export default function App() {
         ui.nodes[ui.nodes.length - 1]?.id ||
         null;
 
+      // Help is the one shortcut that fires bare (Shift+/) since `?` is
+      // the universal "what can I do" key.
+      if (e.key === "?" || (e.shiftKey && e.key === "/")) {
+        e.preventDefault();
+        alert(
+          "Atelier keyboard shortcuts\n\n" +
+            "Shift+F — Fork the targeted node\n" +
+            "Shift+C — Critics on the targeted node\n" +
+            "Shift+B — Feedback (paste-stakeholder) on the targeted node\n" +
+            "Shift+V — open the split Compare viewer (when both A and B are pinned)\n" +
+            "Shift+N — New project\n" +
+            "Shift+T — Tidy (auto-arrange the tree)\n" +
+            "? — show this help\n\n" +
+            "Inside the Compare viewer:\n" +
+            "S — Side by side · D — Split · O — Overlay\n" +
+            "1 — Desktop · 2 — Tablet · 3 — Mobile\n" +
+            "Esc — close"
+        );
+        return;
+      }
+
+      // App-level shortcuts: Shift + <letter>. Anything bare just falls
+      // through to React Flow's own handling (panning, zoom, etc.).
+      if (!e.shiftKey) return;
       const lower = e.key.toLowerCase();
       if (lower === "f" && targetId) {
         e.preventDefault();
@@ -81,22 +107,6 @@ export default function App() {
       } else if (lower === "n") {
         e.preventDefault();
         setNewProjectOpen(true);
-      } else if (e.key === "?" || (e.shiftKey && e.key === "/")) {
-        e.preventDefault();
-        // Show a quick tooltip-style alert with available shortcuts
-        alert(
-          "Atelier keyboard shortcuts\n\n" +
-            "F — Fork the targeted node\n" +
-            "C — Critics on the targeted node\n" +
-            "B — Feedback (paste-stakeholder) on the targeted node\n" +
-            "V — open the split Compare viewer (when both A and B are pinned)\n" +
-            "N — New project\n" +
-            "? — show this help\n\n" +
-            "Inside the Compare viewer:\n" +
-            "S — Side by side · D — Split · O — Overlay\n" +
-            "1 — Desktop · 2 — Tablet · 3 — Mobile\n" +
-            "Esc — close"
-        );
       }
     };
     window.addEventListener("keydown", onKey);

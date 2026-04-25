@@ -17,6 +17,15 @@ export type NodeDTO = {
   sandbox_url: string | null;
   created_at: string;
   is_checkpoint?: boolean;
+  // Set by the fork SSE path; surfaced on the variant card so users can
+  // see what concretely changed + which Genspark references the variant
+  // was grounded against.
+  reasoning?: {
+    prompt?: string;
+    reasoning?: string;
+    references?: { url: string; title?: string }[];
+    changes?: string[];
+  } | null;
 };
 
 export type EdgeDTO = {
@@ -215,7 +224,17 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ prompt, model, n, shootout }),
     }),
-  enqueueForkJob: (parentId: string, body: { prompt: string; model?: ModelId }) =>
+  enqueueForkJob: (
+    parentId: string,
+    body: {
+      prompt: string;
+      model?: ModelId;
+      // Optional grounding references — pass these through when applying
+      // a Genspark-grounded critique so the new variant card can render
+      // "based on aesop.com / awwwards.com" citation chips.
+      references?: { url: string; title?: string }[];
+    }
+  ) =>
     request<MediaJobDTO>(`/nodes/${parentId}/fork/jobs`, {
       method: "POST",
       body: JSON.stringify(body),

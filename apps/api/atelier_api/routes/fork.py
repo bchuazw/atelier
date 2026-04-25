@@ -35,21 +35,25 @@ FORK_SYSTEM = [
         "text": (
             "You are Atelier, a frontend-design iteration engine. Given an HTML document "
             "(the 'parent' variant) and a short user instruction, produce a modified HTML "
-            "document that applies the instruction as a visible design change.\n\n"
+            "document that applies the instruction as a visible, MEASURABLE design change.\n\n"
             "Rules:\n"
             "1. Return a COMPLETE HTML document including <!DOCTYPE html>, <html>, <head>, <body>.\n"
             "2. Preserve all existing <script> tags, <link rel=\"stylesheet\">, <img>, and <base> exactly; only change what the instruction asks for, or visual CSS that realises the instruction.\n"
             "3. Prefer adding a <style data-atelier-change> block inside <head> with rules that override existing styles, rather than editing existing CSS files.\n"
             "4. Keep relative asset paths intact (anything under assets/... must stay as-is).\n"
             "5. Do NOT introduce external fonts, frameworks, or CDN links the document doesn't already use.\n"
-            "6. After the HTML, on a NEW line, write exactly `---META---` then a short JSON object "
+            "6. **Make the change SUBSTANTIAL.** A user looking at the parent and the new variant side by side must see at least 3 distinct, measurable differences. If the instruction is 'bolder headline', that means font-weight up to at least 800 AND a 25%+ font-size bump AND tighter letter-spacing — not a 100→500 weight nudge alone. If it's 'warmer palette', shift hue across at least background + accent + text-secondary, not just one swatch. **A diff that's 95% identical to the parent is a FAILURE.** Push the design hard in the requested direction; cosmetic micro-changes are useless for design iteration.\n"
+            "7. After the HTML, on a NEW line, write exactly `---META---` then a short JSON object "
             '{"title": "2-4 word headline (no commas, no full sentences, like a chapter heading)", '
-            '"summary": "one sentence what changed", "reasoning": "2-3 sentences why this achieves the goal"}.\n'
+            '"summary": "one sentence what changed", "reasoning": "2-3 sentences why this achieves the goal", '
+            '"changes": ["concrete change 1 with numbers (e.g. h1 font-weight 600 -> 900)", "concrete change 2", "concrete change 3"]}.\n'
             'Title examples that work: "Editorial Serif Hero", "Bolder Headline", "Calmer Spacing".\n'
             'Title examples to avoid: "Bolder headline, larger CTA" (has comma), '
-            '"Made the headline shorter and bolder" (full sentence, too long).\n\n'
+            '"Made the headline shorter and bolder" (full sentence, too long).\n'
+            'The `changes` array must list at least 3 concrete deltas with numeric values where possible. '
+            'If you can\'t list 3 substantial changes, your variant isn\'t different enough — push harder.\n\n'
             "Output format (literal, no other commentary):\n"
-            "<!DOCTYPE html>\n<html ...>\n...full document...\n</html>\n---META---\n{\"title\": ..., \"summary\": ..., \"reasoning\": ...}\n"
+            "<!DOCTYPE html>\n<html ...>\n...full document...\n</html>\n---META---\n{\"title\": ..., \"summary\": ..., \"reasoning\": ..., \"changes\": [...]}\n"
         ),
         "cache_control": {"type": "ephemeral"},
     }
@@ -247,9 +251,22 @@ async def fork_node(parent_id: str, body: ForkIn, session: AsyncSession = Depend
 # endpoint).
 
 
+class ForkReference(BaseModel):
+    """Link the user/AI considered when composing the prompt — surfaced as
+    citation chips on the resulting variant card so users can audit
+    'where did this idea come from'."""
+
+    url: str
+    title: str | None = None
+
+
 class ForkJobIn(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=8000)
     model: str | None = "sonnet"
+    # Optional: when the prompt was composed from a Genspark-grounded
+    # critic apply, attach the source URLs so the new variant's card can
+    # display "based on aesop.com / awwwards.com" provenance chips.
+    references: list[ForkReference] | None = None
 
 
 class ForkJobOut(BaseModel):
@@ -324,6 +341,18 @@ async def _run_fork_job_bg(job_id: str, parent_id: str, body: ForkJobIn) -> None
                     "prompt": body.prompt,
                     "reasoning": meta.get("reasoning", ""),
                     "model_key": model_choice,
+                    # Preserve optional Genspark grounding references — the
+                    # variant card uses them to render citation chips so
+                    # users can audit "this came from Aesop / Awwwards".
+                    "references": (
+                        [r.model_dump() for r in body.references]
+                        if body.references
+                        else []
+                    ),
+                    # Concrete diffs from the Claude rewrite (added in the
+                    # variance-tightened system prompt). Surfaced on the
+                    # variant card so users see what actually changed.
+                    "changes": meta.get("changes", []),
                 },
                 created_by="agent",
                 model_used=resp.model,

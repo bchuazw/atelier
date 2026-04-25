@@ -148,7 +148,13 @@ export default function CriticsDialog() {
       `Respect the rationale behind each item.\n\n${bullets}`;
     const targetId = target.id;
     api
-      .enqueueForkJob(targetId, { prompt, model })
+      .enqueueForkJob(targetId, {
+        prompt,
+        model,
+        // Forward Genspark references so the new variant card can show
+        // citation chips next to its title.
+        references: grounded ? references : undefined,
+      })
       .then((job) =>
         subscribeToJob<ForkChildDTO>(
           job.stream_url,

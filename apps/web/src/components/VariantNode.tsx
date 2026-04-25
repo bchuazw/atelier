@@ -120,13 +120,38 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
 
       <div className="p-3 space-y-1.5">
         <div className="text-[13px] font-medium leading-tight">
-          {/* Wrap long titles to a second line instead of truncating mid-word
-              (which produced things like "Bolder headline, b…"). Hard cap
-              at two lines so the card doesn't grow unboundedly. */}
           <span className="line-clamp-2 break-words" title={node.title || "Untitled"}>
             {node.title || "Untitled"}
           </span>
         </div>
+
+        {/* Genspark provenance: when this variant was applied from a
+            grounded critic run, show small citation chips so designers
+            can audit "where did this idea come from". Only visible when
+            references are present — keeps non-grounded variants clean. */}
+        {node.reasoning?.references && node.reasoning.references.length > 0 && (
+          <div className="flex flex-wrap gap-1 pt-0.5">
+            {node.reasoning.references.slice(0, 3).map((r) => {
+              let host = r.url;
+              try {
+                host = new URL(r.url).hostname.replace(/^www\./, "");
+              } catch {}
+              return (
+                <a
+                  key={r.url}
+                  href={r.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  title={r.title || r.url}
+                  className="inline-flex items-center text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-cyan-50 border border-cyan-200 text-cyan-700 hover:border-cyan-400 max-w-[100px] truncate"
+                >
+                  {host}
+                </a>
+              );
+            })}
+          </div>
+        )}
         {node.summary && (
           <p className="text-[11px] text-zinc-500 leading-snug line-clamp-2">{node.summary}</p>
         )}
@@ -187,7 +212,13 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
             )}
           >
             <Columns className="w-3 h-3" />
-            {isA ? "A — pick B" : isB ? "B — pick A" : compare.a ? "B" : "Compare"}
+            {isA
+              ? "A — pick B"
+              : isB
+              ? "B — pick A"
+              : compare.a
+              ? "Pick as B"
+              : "Compare"}
           </button>
         </div>
 

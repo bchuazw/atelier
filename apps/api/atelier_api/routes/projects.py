@@ -228,6 +228,18 @@ async def get_tree(
                 "sandbox_url": storage.variant_url(n.id) if n.build_status == "ready" else None,
                 "created_at": n.created_at,
                 "is_checkpoint": bool(checkpoint_id) and n.id == checkpoint_id,
+                # Slim subset of n.reasoning for the variant card —
+                # `references` (Genspark grounding) + `changes` (the diffs
+                # the rewriter declared). Heavy fields like the full prompt
+                # text stay server-side.
+                "reasoning": (
+                    {
+                        "references": (n.reasoning or {}).get("references", []) or [],
+                        "changes": (n.reasoning or {}).get("changes", []) or [],
+                    }
+                    if n.reasoning
+                    else None
+                ),
             }
             for n in nodes
         ],

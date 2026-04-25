@@ -63,13 +63,20 @@ export default function NewProjectDialog({
       } else if (mode === "url" && url.trim()) {
         seedUrl = url.trim();
       }
-      const project = await api.createProject({
+      const created = await api.createProject({
         name: name.trim(),
         seed_url: seedUrl,
         seed_html: seedHtml,
       });
-      const tree = await api.getTree(project.id);
-      setTree(tree.project as any, tree.nodes, tree.edges);
+      const tree = await api.getTree(created.id);
+      // Always prefer the project metadata from createProject (it's the
+      // canonical record); merge tree-level fields (context, archived_count)
+      // that aren't on the bare project DTO. Falling back to `created`
+      // guarantees a non-null project object — a previous session report
+      // saw the canvas remain on EmptyState because tree.project came back
+      // missing in some race.
+      const projectForStore = { ...created, ...(tree.project ?? {}) };
+      setTree(projectForStore as any, tree.nodes, tree.edges);
       onClose();
     } catch (e: any) {
       setError(e?.message || "Failed to create project");

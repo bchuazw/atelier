@@ -109,7 +109,9 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
         </div>
 
         <div className="flex items-center gap-2 text-sm">
-          <div className="text-[11px] text-zinc-500 mr-2">{nodes.length} nodes</div>
+          <div className="text-[11px] text-zinc-500 mr-2">
+            {nodes.length} {nodes.length === 1 ? "node" : "nodes"}
+          </div>
           {sessionCostUsd > 0 && (
             <div
               className="text-[10px] text-zinc-500 font-mono px-2 py-0.5 rounded bg-zinc-100"
