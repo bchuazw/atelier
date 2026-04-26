@@ -27,7 +27,7 @@ const COPY_PRESETS = [
 ];
 
 export default function ForkDialog() {
-  const { forkDialogOpen, forkParentId, forkPrefill, closeFork, nodes, openViewer, setCompareA, setCompareB, includeArchived } = useUI();
+  const { forkDialogOpen, forkParentId, forkPrefill, closeFork, nodes, openViewer, setCompareA, setCompareB, includeArchived, project } = useUI();
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState("sonnet");
   const [n, setN] = useState(1);
@@ -97,6 +97,16 @@ export default function ForkDialog() {
   const effectiveCount = shootout ? 3 : n;
   const ctaLabel = shootout ? "Run shootout (3 models)" : `Fork ${n}×`;
 
+  // Soft-cap aware cost estimate — only rendered when the project has a cap
+  // set, so users with no cap don't see extra noise. Uses the same
+  // per-call rates as the existing fan-out confirm so the numbers agree.
+  const capCents = project?.cost_cap_cents ?? null;
+  const totalCostCents = project?.total_cost_cents ?? 0;
+  const perCallUsd = shootout ? 0.06 : model === "opus" ? 0.18 : model === "haiku" ? 0.01 : 0.06;
+  const estUsd = perCallUsd * effectiveCount;
+  const showCapLine = capCents != null && capCents > 0;
+  const wouldExceed = showCapLine && (totalCostCents + Math.round(estUsd * 100)) > (capCents as number);
+
   return (
     <div className="fixed inset-0 z-50 bg-zinc-900/40 flex items-center justify-center p-4">
       <div className="w-full max-w-2xl bg-stone-50 border border-zinc-200 rounded-xl shadow-2xl">
@@ -116,6 +126,20 @@ export default function ForkDialog() {
         </div>
 
         <div className="p-4 space-y-4">
+          {showCapLine && (
+            <div
+              className={clsx(
+                "text-[11px] px-2.5 py-1.5 rounded border",
+                wouldExceed
+                  ? "bg-rose-50 border-rose-300 text-rose-700"
+                  : "bg-emerald-50 border-emerald-200 text-emerald-700"
+              )}
+              title="Estimate uses Sonnet $0.06/call (Haiku $0.01, Opus $0.18, shootout $0.06×3) as a proxy."
+            >
+              Estimated to cost ~${estUsd.toFixed(2)} (cap is ${(capCents! / 100).toFixed(2)}; spent so far ${(totalCostCents / 100).toFixed(2)}).
+              {wouldExceed && " This fork may be refused."}
+            </div>
+          )}
           <div>
             <label className="text-xs text-zinc-500 mb-1.5 block">Prompt</label>
             <textarea

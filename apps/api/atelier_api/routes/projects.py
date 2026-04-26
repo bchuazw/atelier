@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from atelier_api.config import settings
 from atelier_api.db.models import Edge, Node, Project
 from atelier_api.db.session import get_session
+from atelier_api.pricing import project_total_cost_cents
 from atelier_api.sandbox.fetcher import fetch_page, save_html_as_seed
 from atelier_api.storage import storage
 
@@ -72,6 +73,11 @@ class ProjectPatchIn(BaseModel):
     clear_checkpoint: bool | None = None
     name: str | None = None  # rename the project (validated in route)
     style_pins: list[StylePin] | None = None  # full replace when provided
+    # Soft cap on lifetime project spend, in USD cents. When set and the
+    # rollup reaches this value, fork attempts fail fast with HTTP 402 (or
+    # an SSE `cost-capped` event). 0 disables the cap (treated as "unset"),
+    # negative is rejected. Persisted in `project.settings["cost_cap_cents"]`.
+    cost_cap_cents: int | None = None
 
 
 @router.post("", response_model=ProjectOut)
@@ -256,6 +262,16 @@ async def get_tree(
         # Only surface edges whose BOTH endpoints are visible (so archived parents don't dangle).
         edges = [e for e in raw_edges if e.from_node_id in visible_id_set and e.to_node_id in visible_id_set]
 
+    # Lifetime project cost, summed across every node's token_usage with the
+    # node's actual model id. Cents (integer) on the wire so the client never
+    # rounds floats. Always computed across `all_nodes`, not the visible
+    # subset — a checkpoint hides nodes from the canvas but their cost still
+    # counts against the project's lifetime spend.
+    total_cost_cents = project_total_cost_cents(all_nodes)
+    # Soft cap stored as int cents in project.settings, or null when unset.
+    raw_cap = proj_settings.get("cost_cap_cents")
+    cost_cap_cents: int | None = int(raw_cap) if isinstance(raw_cap, (int, float)) and raw_cap > 0 else None
+
     return {
         "project": {
             "id": project.id,
@@ -267,6 +283,8 @@ async def get_tree(
             "active_checkpoint_id": checkpoint_id,
             "archived_count": archived_count,
             "total_count": total_count,
+            "total_cost_cents": total_cost_cents,
+            "cost_cap_cents": cost_cap_cents,
         },
         "nodes": [
             {
@@ -353,6 +371,12 @@ async def patch_project(
             if p.prop.strip() and p.value.strip()
         ][:12]
         current["style_pins"] = cleaned
+    if body.cost_cap_cents is not None:
+        # 0 (or negative) clears the cap; positive ints set/replace it.
+        if body.cost_cap_cents <= 0:
+            current.pop("cost_cap_cents", None)
+        else:
+            current["cost_cap_cents"] = int(body.cost_cap_cents)
     project.settings = current
     if body.name is not None:
         new_name = body.name.strip()
@@ -366,6 +390,7 @@ async def patch_project(
         "context": current.get("context", ""),
         "style_pins": current.get("style_pins", []),
         "active_checkpoint_id": current.get("active_checkpoint_id"),
+        "cost_cap_cents": current.get("cost_cap_cents"),
     }
 
 

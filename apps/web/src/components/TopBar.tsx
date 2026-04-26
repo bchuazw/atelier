@@ -79,6 +79,25 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
   const archivedCount = project?.archived_count ?? 0;
   const hasCheckpoint = !!project?.active_checkpoint_id;
 
+  // Per-project lifetime cost chip. Always rendered when a project is loaded
+  // so the user has a constant signal of what they've spent (Karim's
+  // "no per-project rollup" callout). Color escalates as we approach the cap;
+  // tooltip explains the math + where to set the cap.
+  const projectCostCents = project?.total_cost_cents ?? 0;
+  const projectCapCents = project?.cost_cap_cents ?? null;
+  const projectCostUsd = projectCostCents / 100;
+  // Cap-aware tone: green under 60% of cap, amber 60-90%, rose >=90%.
+  // No cap -> stay neutral zinc so users don't read meaning into the color.
+  const costRatio = projectCapCents && projectCapCents > 0 ? projectCostCents / projectCapCents : 0;
+  const costTone =
+    !projectCapCents
+      ? "bg-zinc-100 text-zinc-600 border border-zinc-200"
+      : costRatio >= 0.9
+      ? "bg-rose-100 text-rose-700 border border-rose-300"
+      : costRatio >= 0.6
+      ? "bg-amber-100 text-amber-700 border border-amber-300"
+      : "bg-emerald-50 text-emerald-700 border border-emerald-200";
+
   // Rough session-cost estimate using Sonnet-4.6 list pricing as the
   // weighted-average proxy ($3 / 1M input, $15 / 1M output, $0.30 / 1M cached
   // read, $3.75 / 1M cache-write). Genuine costs vary with model mix; this
@@ -106,6 +125,28 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
               <span className="text-zinc-500">No project loaded</span>
             )}
           </div>
+          {project && (
+            <div
+              className={clsx(
+                "text-[10px] font-mono font-medium px-2 py-0.5 rounded",
+                costTone
+              )}
+              title={
+                `Project lifetime cost: $${projectCostUsd.toFixed(2)}` +
+                (projectCapCents
+                  ? `\nCap: $${(projectCapCents / 100).toFixed(2)} (` +
+                    `${Math.round(costRatio * 100)}% used)`
+                  : "\nNo cap set.") +
+                "\n\nTotal cost across this project (Haiku/Sonnet/Opus pricing). " +
+                "Set a cap in Context Panel."
+              }
+            >
+              ~${projectCostUsd.toFixed(2)}
+              {projectCapCents ? (
+                <span className="opacity-70"> / ${(projectCapCents / 100).toFixed(0)}</span>
+              ) : null}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2 text-sm">

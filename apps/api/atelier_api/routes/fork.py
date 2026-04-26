@@ -21,6 +21,7 @@ from atelier_api.db.models import Edge, Node, Project
 from atelier_api.db.session import SessionLocal, get_session
 from atelier_api.layout import next_child_position
 from atelier_api.llm import client as llm
+from atelier_api.pricing import project_total_cost_cents
 from atelier_api.storage import storage
 
 log = logging.getLogger(__name__)
@@ -165,6 +166,24 @@ def _strict_color_pins_violated(html: str, style_pins: list[dict] | None) -> lis
     return violations
 
 
+async def _project_cost_status(
+    session: AsyncSession, project_id: str
+) -> tuple[int, int | None]:
+    """Return (total_cost_cents, cost_cap_cents) for the project. Cap is None
+    when unset. Used by both fork paths to gate before hitting the LLM.
+
+    Sums across ALL nodes (not just visible-under-checkpoint) because the cap
+    is about lifetime spend, not what's currently rendered."""
+    nodes = (
+        (await session.execute(select(Node).where(Node.project_id == project_id))).scalars().all()
+    )
+    total = project_total_cost_cents(nodes)
+    project = await session.get(Project, project_id)
+    raw_cap = (project.settings or {}).get("cost_cap_cents") if project else None
+    cap = int(raw_cap) if isinstance(raw_cap, (int, float)) and raw_cap > 0 else None
+    return total, cap
+
+
 async def _generate_one(
     parent_html: str,
     prompt: str,
@@ -248,6 +267,19 @@ async def fork_node(parent_id: str, body: ForkIn, session: AsyncSession = Depend
         models_to_run = list(SHOOTOUT_MODELS)
     else:
         models_to_run = [body.model or "sonnet"] * body.n
+
+    # Soft cost cap. If lifetime spend already met the user's cap, refuse the
+    # fork BEFORE we issue any LLM call — Karim's "runaway fan" guard. Seed
+    # creation is unaffected (only fork attempts pass through this path).
+    total_cents, cap_cents = await _project_cost_status(session, parent.project_id)
+    if cap_cents is not None and total_cents >= cap_cents:
+        raise HTTPException(
+            status_code=402,
+            detail=(
+                f"Project cost cap reached (${cap_cents / 100:.2f}). "
+                "Raise the cap in Project Context to continue."
+            ),
+        )
 
     generations = await asyncio.gather(
         *[
@@ -411,6 +443,26 @@ async def _run_fork_job_bg(job_id: str, parent_id: str, body: ForkJobIn) -> None
             project = await session.get(Project, parent.project_id)
             context_text = (project.settings or {}).get("context") if project else None
             style_pins = (project.settings or {}).get("style_pins") if project else None
+
+            # Soft cost cap (SSE path). Same gate as the sync `/fork` endpoint
+            # but emits a `cost-capped` event instead of raising HTTP 402, so
+            # the UI can show a polished message rather than a stream error.
+            total_cents, cap_cents = await _project_cost_status(session, parent.project_id)
+            if cap_cents is not None and total_cents >= cap_cents:
+                await jobs.emit(
+                    job_id,
+                    "cost-capped",
+                    {
+                        "total_cost_cents": total_cents,
+                        "cost_cap_cents": cap_cents,
+                        "message": (
+                            f"Project cost cap reached (${cap_cents / 100:.2f}). "
+                            "Raise the cap in Project Context to continue."
+                        ),
+                    },
+                )
+                await jobs.emit(job_id, "done", {"ok": False})
+                return
 
             model_choice = body.model or "sonnet"
             await jobs.emit(job_id, "rewriting-html", {"model": model_choice})

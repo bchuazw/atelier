@@ -79,6 +79,13 @@ export type ProjectDTO = {
   total_count?: number;
   node_count?: number;
   last_activity?: string | null;
+  // Lifetime project cost (USD cents) and optional soft cap. The TopBar
+  // shows the running total; ContextPanel sets the cap; the fork endpoints
+  // refuse to run when total >= cap. Cents (integer) on the wire so the
+  // client never deals with floats. `total_cost_cents` is always present
+  // (0 for projects with only a seed); `cost_cap_cents` is null when unset.
+  total_cost_cents?: number;
+  cost_cap_cents?: number | null;
 };
 
 export type TreeDTO = {
@@ -251,6 +258,8 @@ export const api = {
       clear_checkpoint?: boolean;
       name?: string;
       style_pins?: StylePin[];
+      // USD cents. 0 (or omitted) clears the cap; positive sets it.
+      cost_cap_cents?: number | null;
     }
   ) =>
     request<{
@@ -259,6 +268,7 @@ export const api = {
       context: string;
       style_pins?: StylePin[];
       active_checkpoint_id: string | null;
+      cost_cap_cents?: number | null;
     }>(
       `/projects/${projectId}`,
       { method: "PATCH", body: JSON.stringify(body) }

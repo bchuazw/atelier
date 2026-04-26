@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { X, BookOpen, Loader2, Save, Pin, Plus, Trash2, Lock } from "lucide-react";
+import { X, BookOpen, Loader2, Save, Pin, Plus, Trash2, Lock, DollarSign } from "lucide-react";
 import { api, type StylePin, type StylePinKind } from "@/lib/api";
 import { useUI } from "@/lib/store";
 
@@ -77,6 +77,10 @@ export default function ContextPanel() {
   const { contextPanelOpen, closeContextPanel, project, setProject } = useUI();
   const [draftContext, setDraftContext] = useState("");
   const [draftPins, setDraftPins] = useState<StylePin[]>([]);
+  // Cap input is a free-text dollar string ("5", "12.50", or "" for no cap).
+  // We convert to integer cents only at save time so the user can clear with
+  // an empty input rather than typing 0.
+  const [draftCapDollars, setDraftCapDollars] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -84,11 +88,22 @@ export default function ContextPanel() {
     if (contextPanelOpen) {
       setDraftContext(project?.context ?? "");
       setDraftPins(project?.style_pins ?? []);
+      const capCents = project?.cost_cap_cents;
+      setDraftCapDollars(capCents != null && capCents > 0 ? (capCents / 100).toString() : "");
       setSaved(false);
     }
-  }, [contextPanelOpen, project?.context, project?.style_pins]);
+  }, [contextPanelOpen, project?.context, project?.style_pins, project?.cost_cap_cents]);
 
   if (!contextPanelOpen) return null;
+
+  // Parse the dollar input into cents. NaN / empty -> null (clear cap).
+  function capDraftToCents(): number | null {
+    const trimmed = draftCapDollars.trim();
+    if (!trimmed) return null;
+    const usd = Number(trimmed);
+    if (!Number.isFinite(usd) || usd <= 0) return null;
+    return Math.round(usd * 100);
+  }
 
   async function save() {
     if (!project) return;
@@ -96,20 +111,31 @@ export default function ContextPanel() {
     try {
       // Filter empty rows so the UI never sends pins like { prop: "", value: "" }.
       const pins = draftPins.filter((p) => p.prop.trim() && p.value.trim());
+      const capCents = capDraftToCents();
       const res = await api.patchProject(project.id, {
         context: draftContext,
         style_pins: pins,
+        // Send 0 to explicitly clear an existing cap; positive int to set.
+        cost_cap_cents: capCents ?? 0,
       });
-      setProject({ ...project, context: res.context, style_pins: res.style_pins ?? pins });
+      setProject({
+        ...project,
+        context: res.context,
+        style_pins: res.style_pins ?? pins,
+        cost_cap_cents: res.cost_cap_cents ?? null,
+      });
       setSaved(true);
     } finally {
       setSaving(false);
     }
   }
 
+  const currentCapCents = project?.cost_cap_cents ?? null;
+  const draftCapCents = capDraftToCents();
   const dirty =
     (project?.context ?? "") !== draftContext ||
-    JSON.stringify(project?.style_pins ?? []) !== JSON.stringify(draftPins);
+    JSON.stringify(project?.style_pins ?? []) !== JSON.stringify(draftPins) ||
+    (currentCapCents ?? null) !== (draftCapCents ?? null);
 
   function addPin(seed?: StylePin) {
     // New blank pins default to text+soft so they behave exactly like
@@ -151,6 +177,46 @@ export default function ContextPanel() {
         </div>
 
         <div className="flex-1 overflow-auto p-4 space-y-5">
+          {/* Soft cost cap — when the project's lifetime spend reaches this
+              amount, fork attempts fail fast (HTTP 402 on sync, `cost-capped`
+              SSE event on async) before the LLM is called. Empty = no cap. */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5">
+                <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="text-[12px] font-medium">Cost cap</span>
+                <span className="text-[11px] text-zinc-600">
+                  · refuse forks once lifetime spend hits this number
+                </span>
+              </div>
+              <div className="text-[11px] text-zinc-500 font-mono">
+                so far: ${((project?.total_cost_cents ?? 0) / 100).toFixed(2)}
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-zinc-400 text-[12px] px-1">$</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="0.5"
+                value={draftCapDollars}
+                onChange={(e) => {
+                  setDraftCapDollars(e.target.value);
+                  setSaved(false);
+                }}
+                placeholder="no cap"
+                disabled={saving}
+                className="w-32 bg-white border border-zinc-200 rounded px-2 py-1 text-[12px] font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+              />
+              <span className="text-zinc-500 text-[11px]">/ project</span>
+            </div>
+            <div className="mt-1 text-[11px] text-zinc-500">
+              Atelier refuses to fork if this project's lifetime cost reaches this cap.
+              Leave empty for no cap.
+            </div>
+          </div>
+
           {/* Style Pins — structured constraints. Each pin is a {prop, value}
               row that gets injected into every fork as a HARD rule. Distinct
               from the free-form context below, which is more "vibes". */}
