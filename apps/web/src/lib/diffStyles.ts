@@ -82,7 +82,7 @@ export type StyleDiff = {
   property: string;
   before: string | null;
   after: string | null;
-  category: "typography" | "palette" | "spacing" | "effects" | "layout" | "structure";
+  category: "typography" | "palette" | "spacing" | "effects" | "layout" | "structure" | "copy";
 };
 
 /** Parse every `<style>` tag in a document and return the rules merged
@@ -217,6 +217,153 @@ function computeStructureDiff(beforeHtml: string, afterHtml: string): StyleDiff[
   return out;
 }
 
+/**
+ * Walk the body of an HTML string and pull every block of user-visible
+ * copy — headings, paragraphs, button/link/list-item text, plus
+ * `[role="button"]` for non-button CTAs. Marketers care about the words
+ * on the page, not the divs around them.
+ *
+ * Each entry is `{ sig, text }` where:
+ *   - sig  = element tag (or "role-button" for ARIA buttons)
+ *   - text = collapsed innerText, trimmed, capped at 200 chars (ellipsis)
+ *
+ * Returns [] when DOMParser is unavailable or the body is missing.
+ */
+export function extractCopyBlocks(html: string): { sig: string; text: string }[] {
+  const out: { sig: string; text: string }[] = [];
+  if (typeof DOMParser === "undefined") return out;
+  if (!html || !html.trim()) return out;
+  let doc: Document;
+  try {
+    doc = new DOMParser().parseFromString(html, "text/html");
+  } catch {
+    return out;
+  }
+  const body = doc.body;
+  if (!body) return out;
+
+  const TEXT_TAGS = ["h1", "h2", "h3", "p", "button", "a", "li"];
+  // Selector pulls in role="button" too so ARIA-only CTAs don't slip past.
+  const selector = TEXT_TAGS.join(",") + ',[role="button"]';
+  let nodes: Element[];
+  try {
+    nodes = Array.from(body.querySelectorAll(selector));
+  } catch {
+    return out;
+  }
+
+  for (const el of nodes) {
+    const tag = el.tagName.toLowerCase();
+    // Filter out non-visual containers entirely. We never look inside
+    // <script>/<style>/<link>, so they shouldn't surface text either.
+    if (tag === "script" || tag === "style" || tag === "link" || tag === "noscript") continue;
+    let sig: string;
+    if (TEXT_TAGS.includes(tag)) {
+      sig = tag;
+    } else if (el.getAttribute("role") === "button") {
+      sig = "role-button";
+    } else {
+      continue;
+    }
+    let text = (el.textContent || "").replace(/\s+/g, " ").trim();
+    if (!text) continue;
+    if (text.length > 200) text = text.slice(0, 199) + "…";
+    out.push({ sig, text });
+  }
+  return out;
+}
+
+/**
+ * Diff the user-visible copy between two HTML strings. Alignment strategy:
+ *   - Group blocks by `sig` (tag) on each side, preserving document order.
+ *   - For each tag, walk the two ordered lists side by side. If both texts
+ *     are identical → no diff. If they differ → "rewrote". When one side
+ *     runs out → "added" or "removed".
+ *
+ * This means reordering paragraphs within the same tag is treated as
+ * rewrites at each ordinal slot; we accept that trade-off because reliable
+ * fuzzy matching is overkill for a marketer's eyeball scan, and identical
+ * strings at different positions still register as "no diff" pairs.
+ *
+ * Caps at 50 entries; remaining changes collapse into a single sentinel
+ * row so one giant page doesn't drown the panel.
+ */
+export function computeCopyDiff(beforeHtml: string, afterHtml: string): StyleDiff[] {
+  const beforeBlocks = extractCopyBlocks(beforeHtml);
+  const afterBlocks = extractCopyBlocks(afterHtml);
+  if (beforeBlocks.length === 0 && afterBlocks.length === 0) return [];
+
+  // Bucket each side by sig so we can align ordinally per-tag.
+  const bucket = (blocks: { sig: string; text: string }[]) => {
+    const m = new Map<string, string[]>();
+    for (const b of blocks) {
+      const arr = m.get(b.sig) ?? [];
+      arr.push(b.text);
+      m.set(b.sig, arr);
+    }
+    return m;
+  };
+  const beforeBy = bucket(beforeBlocks);
+  const afterBy = bucket(afterBlocks);
+
+  const allSigs = new Set([...beforeBy.keys(), ...afterBy.keys()]);
+  // Stable, marketer-friendly order: headlines first, CTAs near top.
+  const sigOrder: Record<string, number> = {
+    h1: 0,
+    h2: 1,
+    h3: 2,
+    p: 3,
+    li: 4,
+    button: 5,
+    "role-button": 6,
+    a: 7,
+  };
+  const sortedSigs = Array.from(allSigs).sort(
+    (x, y) => (sigOrder[x] ?? 99) - (sigOrder[y] ?? 99) || x.localeCompare(y)
+  );
+
+  const out: StyleDiff[] = [];
+  const MAX = 50;
+
+  // First pass: identical pairs are skipped. Otherwise, emit added/
+  // removed/rewrote entries indexed by their ordinal within the tag.
+  for (const sig of sortedSigs) {
+    const beforeList = beforeBy.get(sig) ?? [];
+    const afterList = afterBy.get(sig) ?? [];
+    const len = Math.max(beforeList.length, afterList.length);
+    for (let i = 0; i < len; i++) {
+      const b = i < beforeList.length ? beforeList[i] : null;
+      const a = i < afterList.length ? afterList[i] : null;
+      if (b !== null && a !== null && b === a) continue;
+      const ord = len > 1 ? `[${i}]` : "";
+      const selector = `${sig}${ord}`;
+      let property: "added" | "removed" | "rewrote";
+      if (b === null) property = "added";
+      else if (a === null) property = "removed";
+      else property = "rewrote";
+      out.push({
+        selector,
+        property,
+        before: b,
+        after: a,
+        category: "copy",
+      });
+    }
+  }
+
+  if (out.length <= MAX) return out;
+  const head = out.slice(0, MAX);
+  const remaining = out.length - MAX;
+  head.push({
+    selector: "…",
+    property: "more",
+    before: null,
+    after: `…and ${remaining} more copy change${remaining === 1 ? "" : "s"}`,
+    category: "copy",
+  });
+  return head;
+}
+
 /** Compute a flat list of property-level diffs between two HTML strings. */
 export function computeStyleDiff(beforeHtml: string, afterHtml: string): StyleDiff[] {
   const beforeRules = parseStyles(beforeHtml);
@@ -246,22 +393,34 @@ export function computeStyleDiff(beforeHtml: string, afterHtml: string): StyleDi
     }
   }
 
+  // Append copy diffs (headline/CTA/body text changes) — the most
+  // user-facing thing in any redesign, and what marketers scan for first.
+  out.push(...computeCopyDiff(beforeHtml, afterHtml));
+
   // Append structural diffs (added/removed elements) so the lens
   // catches "the headline now has a 3-line copy block" and "a 4th
   // nav link appeared" cases that no CSS rule would surface.
   out.push(...computeStructureDiff(beforeHtml, afterHtml));
 
-  // Sort: structure changes get the most attention so they go first,
-  // then typography → palette → spacing → effects → layout.
+  // Sort: copy changes lead (most user-facing), then structure, then
+  // typography → palette → spacing → effects → layout. Preserve
+  // intra-category order (don't blow away the copy/structure sort).
   const order: Record<StyleDiff["category"], number> = {
-    structure: 0,
-    typography: 1,
-    palette: 2,
-    spacing: 3,
-    effects: 4,
-    layout: 5,
+    copy: 0,
+    structure: 1,
+    typography: 2,
+    palette: 3,
+    spacing: 4,
+    effects: 5,
+    layout: 6,
   };
-  out.sort((x, y) => order[x.category] - order[y.category] || x.selector.localeCompare(y.selector));
+  out.sort((x, y) => {
+    const d = order[x.category] - order[y.category];
+    if (d !== 0) return d;
+    // Keep copy + structure entries in the order their producers emitted.
+    if (x.category === "copy" || x.category === "structure") return 0;
+    return x.selector.localeCompare(y.selector);
+  });
   return out;
 }
 

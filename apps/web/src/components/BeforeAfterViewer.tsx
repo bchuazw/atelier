@@ -521,6 +521,7 @@ function VPButton({
 }
 
 const CATEGORY_LABEL: Record<StyleDiff["category"], string> = {
+  copy: "Copy",
   structure: "Structure",
   typography: "Typography",
   palette: "Palette",
@@ -530,6 +531,7 @@ const CATEGORY_LABEL: Record<StyleDiff["category"], string> = {
 };
 
 const CATEGORY_TONE: Record<StyleDiff["category"], string> = {
+  copy: "bg-sky-50 border-sky-300 text-sky-700",
   structure: "bg-emerald-50 border-emerald-200 text-emerald-800",
   typography: "bg-amber-50 border-amber-200 text-amber-800",
   palette: "bg-rose-50 border-rose-200 text-rose-800",
@@ -576,9 +578,8 @@ function DiffPanel({
         <div className="p-4 text-[12px] text-zinc-500">Computing diff…</div>
       ) : diff.length === 0 ? (
         <div className="p-4 text-[12px] text-zinc-500">
-          No tracked CSS properties changed between A and B. (We diff
-          typography, palette, spacing, effects, and a few layout props —
-          structural HTML changes won't show here.)
+          Nothing changed between A and B. (We diff copy, structure,
+          typography, palette, spacing, effects, and a few layout props.)
         </div>
       ) : (
         <div className="p-3 space-y-3">
@@ -604,6 +605,14 @@ function DiffRow({ d, cat }: { d: StyleDiff; cat: StyleDiff["category"] }) {
   const beforeColors = extractColors(d.before);
   const afterColors = extractColors(d.after);
   const showSwatches = cat === "palette" && (beforeColors.length || afterColors.length);
+
+  // Copy diffs render differently: full text in legible prose (no
+  // monospace, no truncation), stacked before → after with strikethrough
+  // on the removed side. Marketers scan the words, not selectors.
+  if (cat === "copy") {
+    return <CopyDiffRow d={d} />;
+  }
+
   return (
     <div
       className={clsx(
@@ -646,6 +655,51 @@ function DiffRow({ d, cat }: { d: StyleDiff; cat: StyleDiff["category"] }) {
           <span className="font-mono text-[10px] truncate font-medium">{d.after ?? "—"}</span>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Render a single Copy-category diff. "rewrote" stacks before above
+ *  after (strikethrough + dim, then bold); "added" / "removed" show one
+ *  side only. The "more" sentinel collapses to a dim italic line. */
+function CopyDiffRow({ d }: { d: StyleDiff }) {
+  const tone = CATEGORY_TONE.copy;
+
+  if (d.property === "more") {
+    return (
+      <div className={clsx("rounded border px-2 py-1.5 text-[11px] italic opacity-80", tone)}>
+        {d.after ?? "…and more copy changes"}
+      </div>
+    );
+  }
+
+  const labelMap: Record<string, string> = {
+    added: "added",
+    removed: "removed",
+    rewrote: "rewrote",
+  };
+  const label = labelMap[d.property] ?? d.property;
+
+  return (
+    <div className={clsx("rounded border px-2 py-1.5 text-[12px] leading-snug", tone)}>
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <code className="font-mono text-[10px] opacity-70 truncate" title={d.selector}>
+          {d.selector}
+        </code>
+        <span className="text-[9px] uppercase tracking-wider opacity-70 flex-shrink-0">
+          {label}
+        </span>
+      </div>
+      {d.property === "rewrote" ? (
+        <div className="space-y-1">
+          <div className="line-through opacity-60 break-words">{d.before ?? ""}</div>
+          <div className="font-medium break-words">{d.after ?? ""}</div>
+        </div>
+      ) : d.property === "added" ? (
+        <div className="font-medium break-words">{d.after ?? ""}</div>
+      ) : (
+        <div className="line-through opacity-60 break-words">{d.before ?? ""}</div>
+      )}
     </div>
   );
 }
