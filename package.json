@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "bash scripts/dev.sh",
+    "dev:clean": "bash scripts/dev-clean.sh",
     "dev:web": "cd apps/web && npm run dev",
     "dev:api": "cd apps/api && python -m uvicorn atelier_api.main:app --reload --port 8000",
     "dev:sandbox": "cd sandbox-server && node server.js",
