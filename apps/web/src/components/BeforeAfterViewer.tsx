@@ -522,6 +522,7 @@ function VPButton({
 
 const CATEGORY_LABEL: Record<StyleDiff["category"], string> = {
   copy: "Copy",
+  tokens: "Tokens",
   structure: "Structure",
   typography: "Typography",
   palette: "Palette",
@@ -532,6 +533,7 @@ const CATEGORY_LABEL: Record<StyleDiff["category"], string> = {
 
 const CATEGORY_TONE: Record<StyleDiff["category"], string> = {
   copy: "bg-sky-50 border-sky-300 text-sky-700",
+  tokens: "bg-indigo-50 border-indigo-200 text-indigo-800",
   structure: "bg-emerald-50 border-emerald-200 text-emerald-800",
   typography: "bg-amber-50 border-amber-200 text-amber-800",
   palette: "bg-rose-50 border-rose-200 text-rose-800",
@@ -604,7 +606,11 @@ function DiffPanel({
 function DiffRow({ d, cat }: { d: StyleDiff; cat: StyleDiff["category"] }) {
   const beforeColors = extractColors(d.before);
   const afterColors = extractColors(d.after);
-  const showSwatches = cat === "palette" && (beforeColors.length || afterColors.length);
+  // Render swatches for palette diffs and for token diffs whose values
+  // resolve to a color literal (e.g. `--brand: #c87050 → #3b5d3a`).
+  const showSwatches =
+    (cat === "palette" || cat === "tokens") &&
+    (beforeColors.length > 0 || afterColors.length > 0);
 
   // Copy diffs render differently: full text in legible prose (no
   // monospace, no truncation), stacked before → after with strikethrough

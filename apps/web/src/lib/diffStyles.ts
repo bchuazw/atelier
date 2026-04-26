@@ -82,8 +82,13 @@ export type StyleDiff = {
   property: string;
   before: string | null;
   after: string | null;
-  category: "typography" | "palette" | "spacing" | "effects" | "layout" | "structure" | "copy";
+  category: "typography" | "palette" | "spacing" | "effects" | "layout" | "structure" | "copy" | "tokens";
 };
+
+/** Map of `selector::--tokenName` → declared value. Keying by the
+ *  declaration site (not just the token name) lets us keep `:root --cyan`
+ *  separate from `.dark --cyan` when both exist in the same document. */
+type TokenMap = Map<string, { selector: string; name: string; value: string }>;
 
 /** Parse every `<style>` tag in a document and return the rules merged
  *  in source order — last declaration wins per selector. */
@@ -120,6 +125,79 @@ function parseStyles(html: string): StyleRule[] {
     }
   }
   return Array.from(merged.entries()).map(([selector, decls]) => ({ selector, decls }));
+}
+
+/**
+ * Extract every CSS custom-property declaration (`--foo: value`) from
+ * an HTML string, keyed by `selector::--name` so that the same token
+ * declared in two different selectors stays distinct.
+ *
+ * We re-parse the `<style>` blocks here instead of piggy-backing on
+ * `parseStyles` because that function drops anything outside
+ * `TRACKED_PROPS` to keep the resolved-value diff focused. Tokens
+ * deserve a parallel pass so we don't pollute that allowlist.
+ */
+export function extractTokens(html: string): TokenMap {
+  const out: TokenMap = new Map();
+  if (!html) return out;
+  const styleBlocks: string[] = [];
+  const re = /<style\b[^>]*>([\s\S]*?)<\/style>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) styleBlocks.push(m[1]);
+
+  for (const block of styleBlocks) {
+    const clean = block.replace(/\/\*[\s\S]*?\*\//g, "");
+    const ruleRe = /([^{}]+)\{([^}]*)\}/g;
+    let r: RegExpExecArray | null;
+    while ((r = ruleRe.exec(clean)) !== null) {
+      const selector = r[1].trim();
+      if (!selector || selector.startsWith("@")) continue;
+      for (const sel of selector.split(",").map((s) => s.trim()).filter(Boolean)) {
+        for (const declStr of r[2].split(";")) {
+          const idx = declStr.indexOf(":");
+          if (idx < 0) continue;
+          const prop = declStr.slice(0, idx).trim();
+          const val = declStr.slice(idx + 1).trim();
+          if (!prop.startsWith("--") || !val) continue;
+          // Last declaration wins per (selector, name) — matches CSS cascade
+          // semantics for declarations of equal specificity.
+          out.set(`${sel}::${prop}`, { selector: sel, name: prop, value: val });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Compute the diff between two TokenMaps. Returns one StyleDiff entry
+ * per (selector, token-name) pair whose value changed, was added, or
+ * was removed. Sort: alphabetical by selector then token name so the
+ * panel reads stably.
+ */
+function computeTokenDiff(beforeTokens: TokenMap, afterTokens: TokenMap): StyleDiff[] {
+  const out: StyleDiff[] = [];
+  const allKeys = new Set([...beforeTokens.keys(), ...afterTokens.keys()]);
+  for (const key of allKeys) {
+    const b = beforeTokens.get(key);
+    const a = afterTokens.get(key);
+    const beforeVal = b?.value ?? null;
+    const afterVal = a?.value ?? null;
+    if (beforeVal === afterVal) continue;
+    const meta = b ?? a!;
+    out.push({
+      selector: meta.selector,
+      property: meta.name,
+      before: beforeVal,
+      after: afterVal,
+      category: "tokens",
+    });
+  }
+  out.sort(
+    (x, y) =>
+      x.selector.localeCompare(y.selector) || x.property.localeCompare(y.property)
+  );
+  return out;
 }
 
 /**
@@ -372,6 +450,30 @@ export function computeStyleDiff(beforeHtml: string, afterHtml: string): StyleDi
   const beforeBySel = new Map(beforeRules.map((r) => [r.selector, r.decls]));
   const afterBySel = new Map(afterRules.map((r) => [r.selector, r.decls]));
 
+  // Token-aware pass: detect which `--*` declarations changed, and
+  // build a set of token names (just the bare `--name`, not the
+  // selector) whose value changed. Per-selector diffs that reference
+  // those tokens via `var(--name)` get suppressed below — the token
+  // entry already explains them, so emitting both would be N+1 noise.
+  const beforeTokens = extractTokens(beforeHtml);
+  const afterTokens = extractTokens(afterHtml);
+  const tokenDiffs = computeTokenDiff(beforeTokens, afterTokens);
+  const changedTokenNames = new Set(tokenDiffs.map((d) => d.property));
+
+  /** True if a CSS value uses `var(--name)` (with or without a fallback)
+   *  for any of the given names. */
+  const consumesChangedToken = (val: string | null): boolean => {
+    if (!val) return false;
+    if (changedTokenNames.size === 0) return false;
+    // Lazy regex over each var(...) reference; also matches `var(--x, fallback)`.
+    const re = /var\(\s*(--[\w-]+)/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(val)) !== null) {
+      if (changedTokenNames.has(m[1])) return true;
+    }
+    return false;
+  };
+
   const allSelectors = new Set([...beforeBySel.keys(), ...afterBySel.keys()]);
   const out: StyleDiff[] = [];
 
@@ -383,6 +485,13 @@ export function computeStyleDiff(beforeHtml: string, afterHtml: string): StyleDi
       const beforeVal = a[prop] ?? null;
       const afterVal = b[prop] ?? null;
       if (beforeVal === afterVal) continue;
+      // Suppress consumer-side diffs that only changed because they
+      // reference a token that itself changed. The token entry above
+      // explains it once; we don't need N copies of "color: var(--cyan)
+      // → var(--cyan)" with resolved hex values.
+      if (consumesChangedToken(beforeVal) || consumesChangedToken(afterVal)) {
+        continue;
+      }
       out.push({
         selector: sel,
         property: prop,
@@ -393,6 +502,10 @@ export function computeStyleDiff(beforeHtml: string, afterHtml: string): StyleDi
     }
   }
 
+  // Prepend token diffs so designers see "the brand color moved" before
+  // any consumer-side noise.
+  out.push(...tokenDiffs);
+
   // Append copy diffs (headline/CTA/body text changes) — the most
   // user-facing thing in any redesign, and what marketers scan for first.
   out.push(...computeCopyDiff(beforeHtml, afterHtml));
@@ -402,17 +515,18 @@ export function computeStyleDiff(beforeHtml: string, afterHtml: string): StyleDi
   // nav link appeared" cases that no CSS rule would surface.
   out.push(...computeStructureDiff(beforeHtml, afterHtml));
 
-  // Sort: copy changes lead (most user-facing), then structure, then
-  // typography → palette → spacing → effects → layout. Preserve
-  // intra-category order (don't blow away the copy/structure sort).
+  // Sort: copy → tokens → structure → typography → palette → spacing
+  // → effects → layout. Tokens sit just under copy because for a
+  // design-systems user a moved `--brand` is the headline change.
   const order: Record<StyleDiff["category"], number> = {
     copy: 0,
-    structure: 1,
-    typography: 2,
-    palette: 3,
-    spacing: 4,
-    effects: 5,
-    layout: 6,
+    tokens: 1,
+    structure: 2,
+    typography: 3,
+    palette: 4,
+    spacing: 5,
+    effects: 6,
+    layout: 7,
   };
   out.sort((x, y) => {
     const d = order[x.category] - order[y.category];
