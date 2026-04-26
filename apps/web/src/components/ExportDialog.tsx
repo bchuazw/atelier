@@ -10,6 +10,8 @@ import {
   Image as ImageIcon,
   Globe,
   RefreshCw,
+  Code2,
+  FileText,
 } from "lucide-react";
 import clsx from "clsx";
 import { api } from "@/lib/api";
@@ -53,6 +55,142 @@ function relativeTime(iso: string): string {
 
 type PublishedState = { slug: string; public_url: string; published_at: string };
 
+type ReactExportState = {
+  files: Record<string, string>;
+  model_used: string;
+  token_usage: Record<string, number>;
+  cost_cents: number;
+};
+
+// Cheap pre-flight estimate so the cost pill has a number to show before
+// the user clicks. We assume ~1 token per 4 chars of input HTML for the
+// prompt, plus a fixed 4K-output ceiling at Sonnet rates ($3/M in, $15/M
+// out). Real cost is overwritten from the response payload after the call.
+function estimateReactCostCents(htmlBytes: number): number {
+  const inTok = Math.ceil(htmlBytes / 4) + 600; // +600 for the system prompt
+  const outTok = 4000; // typical Sonnet output for componentize is 3-5K
+  const usd = (inTok * 3.0 + outTok * 15.0) / 1_000_000;
+  return Math.max(1, Math.round(usd * 100));
+}
+
+function formatCents(cents: number): string {
+  if (cents < 100) return `~$0.${cents.toString().padStart(2, "0")}`;
+  return `~$${(cents / 100).toFixed(2)}`;
+}
+
+function countLines(s: string): number {
+  if (!s) return 0;
+  return s.split("\n").length;
+}
+
+// CRC32 lookup table for the ZIP local-file headers. Generated once on
+// module load. STORE-only ZIPs technically don't need a real CRC, but a
+// zero CRC trips strict readers (e.g. `unzip -t`), so we compute it.
+const CRC32_TABLE: Uint32Array = (() => {
+  const t = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) {
+      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    }
+    t[i] = c >>> 0;
+  }
+  return t;
+})();
+
+function crc32(buf: Uint8Array): number {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) {
+    c = CRC32_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  }
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+// Build a STORE-method ZIP from {path: content} entirely client-side. We
+// avoid adding JSZip (the constraint says no new deps) and the alternative
+// — re-calling the LLM endpoint to get a server-built zip — would double
+// the cost on every download. STORE has zero compression, but React
+// projects are tiny (<100 KB typical) so this is fine.
+function buildZipStore(files: Record<string, string>): Blob {
+  const enc = new TextEncoder();
+  const localParts: Uint8Array[] = [];
+  const centralParts: Uint8Array[] = [];
+  let offset = 0;
+  let entryCount = 0;
+
+  for (const [rawPath, content] of Object.entries(files)) {
+    const path = rawPath.replace(/^\/+/, "").replace(/\\/g, "/");
+    const nameBytes = enc.encode(path);
+    const dataBytes = enc.encode(content);
+    const crc = crc32(dataBytes);
+    const size = dataBytes.length;
+
+    // Local file header (30 bytes + name + data).
+    const local = new Uint8Array(30 + nameBytes.length + dataBytes.length);
+    const lv = new DataView(local.buffer);
+    lv.setUint32(0, 0x04034b50, true); // signature
+    lv.setUint16(4, 20, true); // version
+    lv.setUint16(6, 0, true); // flags
+    lv.setUint16(8, 0, true); // method = STORE
+    lv.setUint16(10, 0, true); // mod time
+    lv.setUint16(12, 0x21, true); // mod date (1980-01-01)
+    lv.setUint32(14, crc, true);
+    lv.setUint32(18, size, true); // compressed
+    lv.setUint32(22, size, true); // uncompressed
+    lv.setUint16(26, nameBytes.length, true);
+    lv.setUint16(28, 0, true); // extra
+    local.set(nameBytes, 30);
+    local.set(dataBytes, 30 + nameBytes.length);
+    localParts.push(local);
+
+    // Central directory header (46 bytes + name).
+    const cd = new Uint8Array(46 + nameBytes.length);
+    const cv = new DataView(cd.buffer);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, 20, true); // version made by
+    cv.setUint16(6, 20, true); // version needed
+    cv.setUint16(8, 0, true);
+    cv.setUint16(10, 0, true); // method
+    cv.setUint16(12, 0, true);
+    cv.setUint16(14, 0x21, true);
+    cv.setUint32(16, crc, true);
+    cv.setUint32(20, size, true);
+    cv.setUint32(24, size, true);
+    cv.setUint16(28, nameBytes.length, true);
+    cv.setUint16(30, 0, true); // extra len
+    cv.setUint16(32, 0, true); // comment len
+    cv.setUint16(34, 0, true); // disk
+    cv.setUint16(36, 0, true); // internal
+    cv.setUint32(38, 0, true); // external
+    cv.setUint32(42, offset, true); // local header offset
+    cd.set(nameBytes, 46);
+    centralParts.push(cd);
+
+    offset += local.length;
+    entryCount += 1;
+  }
+
+  const centralSize = centralParts.reduce((s, p) => s + p.length, 0);
+  const eocd = new Uint8Array(22);
+  const ev = new DataView(eocd.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(4, 0, true);
+  ev.setUint16(6, 0, true);
+  ev.setUint16(8, entryCount, true);
+  ev.setUint16(10, entryCount, true);
+  ev.setUint32(12, centralSize, true);
+  ev.setUint32(16, offset, true);
+  ev.setUint16(20, 0, true);
+
+  // Cast to BlobPart[] — modern TS lib types Uint8Array as
+  // Uint8Array<ArrayBufferLike>, which Blob's constructor signature
+  // (BlobPart = string | BufferSource | Blob) refuses because ArrayBufferLike
+  // could be a SharedArrayBuffer. The arrays here are all plain ArrayBuffer-
+  // backed; the cast is safe.
+  const parts: BlobPart[] = [...localParts, ...centralParts, eocd] as unknown as BlobPart[];
+  return new Blob(parts, { type: "application/zip" });
+}
+
 export default function ExportDialog() {
   const { exportDialogOpen, exportNodeId, closeExport, nodes } = useUI();
   const [data, setData] = useState<ExportData | null>(null);
@@ -68,6 +206,13 @@ export default function ExportDialog() {
   const [publishError, setPublishError] = useState<string | null>(null);
   const [urlCopied, setUrlCopied] = useState(false);
 
+  // Componentize-to-React export. Lives next to publish state so the
+  // existing Copy/Download paths keep working while the (15-25s) LLM call
+  // is in flight. Cleared when the dialog closes (see the effect below).
+  const [reactExport, setReactExport] = useState<ReactExportState | null>(null);
+  const [reactConverting, setReactConverting] = useState(false);
+  const [reactError, setReactError] = useState<string | null>(null);
+
   const node = nodes.find((n) => n.id === exportNodeId) || null;
 
   useEffect(() => {
@@ -80,6 +225,9 @@ export default function ExportDialog() {
       setPublishing(false);
       setPublishError(null);
       setUrlCopied(false);
+      setReactExport(null);
+      setReactConverting(false);
+      setReactError(null);
       return;
     }
     setLoading(true);
@@ -157,6 +305,43 @@ export default function ExportDialog() {
       setPublishError(e?.message || "Publish failed");
     } finally {
       setPublishing(false);
+    }
+  }
+
+  async function convertToReact() {
+    if (!exportNodeId) return;
+    setReactConverting(true);
+    setReactError(null);
+    try {
+      const result = await api.exportReact(exportNodeId);
+      setReactExport(result);
+    } catch (e: any) {
+      // 502 -> model returned bad JSON; 402 -> cost cap hit; surface the
+      // server-supplied detail verbatim so the user can act on it (retry
+      // for 502, raise the cap for 402).
+      setReactError(e?.message || "React export failed");
+    } finally {
+      setReactConverting(false);
+    }
+  }
+
+  function downloadReactZip() {
+    // We build the zip client-side from the already-fetched `files` map so
+    // we don't re-run the (15-25s, ~12c) LLM call just to package what we
+    // already have. The server-side `/export/react/zip` endpoint exists too
+    // for scripted/CLI use; this UI path uses the in-memory data.
+    if (!reactExport) return;
+    try {
+      const blob = buildZipStore(reactExport.files);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const safeTitle = (data?.title || "atelier-variant").replace(/[^a-z0-9-_]+/gi, "-");
+      a.download = `${safeTitle}-react.zip`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e: any) {
+      setReactError(e?.message || "zip build failed");
     }
   }
 
@@ -301,6 +486,113 @@ export default function ExportDialog() {
                 {publishError && (
                   <div className="text-[11px] text-rose-600 bg-rose-50 border border-rose-200 rounded px-2 py-1">
                     {publishError}
+                  </div>
+                )}
+              </div>
+
+              {/* Componentize-to-React export. Sits below Publish (which
+                  is the marketing-user primary action) and above the raw
+                  HTML preview because for the dev-handoff path this is
+                  the answer. The plain Copy/Download .html buttons remain
+                  in the footer for users who just want raw markup. */}
+              <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Code2 className="w-4 h-4 text-amber-600" />
+                    <span className="text-[12px] font-medium text-zinc-800">
+                      Convert to React project
+                    </span>
+                    <span className="text-[10px] uppercase tracking-wider text-amber-700 bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5">
+                      beta
+                    </span>
+                  </div>
+                  <span
+                    className="text-[11px] text-zinc-500 font-mono"
+                    title={
+                      reactExport
+                        ? "Real cost from the completed call"
+                        : "Sonnet rates: ~$3 per 1M input tokens, ~$15 per 1M output tokens"
+                    }
+                  >
+                    {reactExport
+                      ? formatCents(reactExport.cost_cents)
+                      : `${formatCents(estimateReactCostCents(data.html_size_bytes))} est.`}
+                  </span>
+                </div>
+
+                {reactExport ? (
+                  <>
+                    <div className="space-y-1 max-h-[200px] overflow-auto">
+                      {Object.entries(reactExport.files).map(([path, content]) => (
+                        <div
+                          key={path}
+                          className="flex items-center justify-between px-2 py-1 bg-white border border-zinc-200 rounded text-[11px]"
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <FileText className="w-3 h-3 text-zinc-400 flex-shrink-0" />
+                            <span className="font-mono text-zinc-700 truncate">{path}</span>
+                          </div>
+                          <span className="text-zinc-400 text-[10px] font-mono flex-shrink-0">
+                            {countLines(content)} lines
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        onClick={downloadReactZip}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-amber-500 hover:bg-amber-400 text-black font-medium"
+                        title="Download all files as a .zip — packed in your browser, no extra LLM cost"
+                      >
+                        <Download className="w-4 h-4" /> Download .zip ({Object.keys(reactExport.files).length} files)
+                      </button>
+                      <button
+                        onClick={convertToReact}
+                        disabled={reactConverting}
+                        className="flex items-center gap-1 px-2 py-1.5 text-[11px] rounded bg-white border border-zinc-300 hover:border-zinc-500 text-zinc-700 disabled:opacity-50"
+                        title="Re-run — produces a fresh rewrite (costs the same as the first call)"
+                      >
+                        {reactConverting ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="w-3.5 h-3.5" />
+                        )}
+                        Re-convert
+                      </button>
+                      <span className="text-[11px] text-zinc-500">
+                        Vite + React + Tailwind. Run <code className="font-mono text-[10px] bg-white border border-zinc-200 rounded px-1">npm install && npm run dev</code> after unzipping.
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      onClick={convertToReact}
+                      disabled={reactConverting}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-amber-500 hover:bg-amber-400 text-black font-medium disabled:opacity-50"
+                    >
+                      {reactConverting ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Code2 className="w-4 h-4" />
+                      )}
+                      {reactConverting ? "Claude is rewriting as React components…" : "Convert to React"}
+                    </button>
+                    <span className="text-[11px] text-zinc-500">
+                      One-shot Sonnet rewrite. Splits into Hero / Features / Footer / etc. Typically 15-25s.
+                    </span>
+                  </div>
+                )}
+
+                {reactConverting && (
+                  <p className="text-[11px] text-amber-700">
+                    Hang tight — generating multi-file output takes longer than a normal fork. The dialog hasn't frozen.
+                  </p>
+                )}
+
+                {reactError && (
+                  <div className="text-[11px] text-rose-600 bg-rose-50 border border-rose-200 rounded px-2 py-1">
+                    {reactError}
                   </div>
                 )}
               </div>

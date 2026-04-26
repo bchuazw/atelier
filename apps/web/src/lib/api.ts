@@ -383,6 +383,16 @@ export const api = {
       `/nodes/${nodeId}/publish`,
       { method: "POST" }
     ),
+  // Componentize-to-React export. One-shot Sonnet rewrite of the variant
+  // HTML into a multi-file React + Tailwind project. Typical latency 15-25s,
+  // so callers should render a clear "Claude is rewriting…" status.
+  exportReact: (nodeId: string) =>
+    request<{
+      files: Record<string, string>;
+      model_used: string;
+      token_usage: Record<string, number>;
+      cost_cents: number;
+    }>(`/nodes/${nodeId}/export/react`, { method: "POST" }),
   getPublishedState: async (nodeId: string) => {
     // We don't want a 404 here to look like a network error in the UI —
     // it's the expected response for "never published". Resolve to null

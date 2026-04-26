@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from atelier_api.config import settings
 from atelier_api.db.models import Node, now_iso
 from atelier_api.db.session import get_session
+from atelier_api.llm import client as llm
+from atelier_api.pricing import cost_cents_for_usage, project_total_cost_cents
 from atelier_api.storage import storage
 
 
@@ -307,6 +312,215 @@ async def export_node_zip(node_id: str, session: AsyncSession = Depends(get_sess
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"',
             "Cache-Control": "no-store",
+        },
+    )
+
+
+REACT_EXPORT_SYSTEM = [
+    {
+        "type": "text",
+        "text": (
+            "You are a senior frontend engineer. Convert a single HTML document into a clean, "
+            "Vite-compatible React + TypeScript project. Split the page into one functional "
+            "component per logical section (Hero, Features, Footer, etc.). Use Tailwind CSS "
+            "for styling — extract any inline `<style>` rules into the component classes. "
+            "Do NOT add routing, state management, or any extra runtime libraries.\n\n"
+            "Output a SINGLE JSON object (no prose, no markdown fences) with shape:\n"
+            "{ \"files\": { \"src/App.tsx\": \"...\", \"src/components/Hero.tsx\": \"...\", "
+            "\"package.json\": \"...\", \"index.html\": \"...\", \"tailwind.config.js\": \"...\", "
+            "\"postcss.config.js\": \"...\", \"src/main.tsx\": \"...\", \"src/index.css\": \"...\", "
+            "\"vite.config.ts\": \"...\", \"tsconfig.json\": \"...\" } }\n\n"
+            "Rules:\n"
+            "1. Every file path is repo-relative (forward slashes).\n"
+            "2. File contents are plain strings — escape newlines as \\n inside JSON.\n"
+            "3. `package.json` declares react, react-dom, vite, @vitejs/plugin-react, "
+            "tailwindcss, postcss, autoprefixer, typescript. No other deps.\n"
+            "4. Components use functional syntax + Tailwind classes; no inline styles unless "
+            "the value is dynamic.\n"
+            "5. Preserve copy, image URLs, and section ordering from the source HTML. "
+            "Keep absolute/relative asset URLs as-is.\n"
+            "6. Return ONLY the JSON object. No leading/trailing prose. No code fences."
+        ),
+        "cache_control": {"type": "ephemeral"},
+    }
+]
+
+
+def _parse_react_export_json(text: str) -> dict:
+    """Strict JSON parse for the React-export response.
+
+    The system prompt asks for a bare JSON object with no fences, but models
+    sometimes wrap output in ```json``` anyway — strip a single fence layer
+    before parsing so we don't fail on that one common deviation. Anything
+    else that isn't valid JSON raises, and the caller turns it into HTTP 502.
+    """
+    cleaned = text.strip()
+    fence = re.match(r"^```(?:json)?\s*(.*?)\s*```$", cleaned, re.DOTALL)
+    if fence:
+        cleaned = fence.group(1).strip()
+    payload = json.loads(cleaned)
+    if not isinstance(payload, dict) or "files" not in payload:
+        raise ValueError("Response missing top-level `files` key")
+    files = payload["files"]
+    if not isinstance(files, dict) or not files:
+        raise ValueError("`files` must be a non-empty object")
+    for path, content in files.items():
+        if not isinstance(path, str) or not isinstance(content, str):
+            raise ValueError(
+                f"Every file entry must be string->string; got {type(path).__name__}->{type(content).__name__}"
+            )
+    return payload
+
+
+async def _project_cost_state(session: AsyncSession, project_id: str) -> tuple[int, int | None]:
+    """Mirror of `routes.fork._project_cost_status` — kept local so this route
+    file doesn't import from fork.py (would create a fan-out import). Returns
+    (total_cost_cents, cost_cap_cents). Cap is None when unset."""
+    from sqlalchemy import select
+
+    from atelier_api.db.models import Project
+
+    nodes = (
+        (await session.execute(select(Node).where(Node.project_id == project_id))).scalars().all()
+    )
+    total = project_total_cost_cents(nodes)
+    project = await session.get(Project, project_id)
+    raw_cap = (project.settings or {}).get("cost_cap_cents") if project else None
+    cap = int(raw_cap) if isinstance(raw_cap, (int, float)) and raw_cap > 0 else None
+    return total, cap
+
+
+async def _generate_react_files(node: Node, session: AsyncSession) -> dict:
+    """Shared LLM-call path for both `/export/react` and `/export/react/zip`.
+
+    Returns `{files, model_used, token_usage, cost_cents}`. Raises HTTPException
+    on cost-cap overflow (402), invalid JSON from the model (502), or upstream
+    Anthropic errors (500). The caller is responsible for shaping the response.
+    """
+    from pathlib import Path  # noqa: F401 — kept for parity with siblings
+
+    if node.build_status != "ready":
+        raise HTTPException(
+            status_code=400, detail=f"Node build_status={node.build_status!r}; can't export."
+        )
+    try:
+        node_dir = await _ensure_node_on_disk(node)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # Cost-cap gate. Same shape as fork.py — reject pre-LLM if the project
+    # is already at/over its cap. Sonnet output for an 8K-token rewrite is
+    # measurable spend (~12-15c), so we don't want to surprise users.
+    total_cents, cap_cents = await _project_cost_state(session, node.project_id)
+    if cap_cents is not None and total_cents >= cap_cents:
+        raise HTTPException(
+            status_code=402,
+            detail=(
+                f"Project cost cap reached (${cap_cents / 100:.2f}). "
+                "Raise the cap in Project Context to continue."
+            ),
+        )
+
+    html = (node_dir / "index.html").read_text(encoding="utf-8")
+    # Truncate the HTML at the same 60K char budget the fork prompt uses;
+    # the React rewrite cares about structure, not tail content, and the
+    # Sonnet input window is generous but not infinite.
+    truncated_html = html[:60000]
+    user_msg = (
+        "Convert the following HTML document into a clean React + Tailwind project. "
+        "Split into one component per logical section. Return JSON only.\n\n"
+        f"```html\n{truncated_html}\n```"
+    )
+
+    try:
+        resp = await llm.call(
+            system=REACT_EXPORT_SYSTEM,
+            user=user_msg,
+            model="sonnet",
+            max_tokens=8192,
+        )
+    except Exception as e:  # pragma: no cover — Anthropic upstream failure
+        raise HTTPException(status_code=500, detail=f"LLM call failed: {e}")
+
+    try:
+        parsed = _parse_react_export_json(resp.text)
+    except (json.JSONDecodeError, ValueError) as e:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"Model returned invalid JSON for React export: {e}. "
+                "Retry — the rewrite is one-shot and occasionally produces malformed output."
+            ),
+        )
+
+    usage = resp.usage_dict
+    cost_cents = cost_cents_for_usage(usage, resp.model)
+    return {
+        "files": parsed["files"],
+        "model_used": resp.model,
+        "token_usage": usage,
+        "cost_cents": cost_cents,
+    }
+
+
+@router.post("/{node_id}/export/react")
+async def export_node_react(node_id: str, session: AsyncSession = Depends(get_session)):
+    """One-shot Claude rewrite of the variant HTML into a multi-file React project.
+
+    Returns `{files: {path: content}, model_used, token_usage, cost_cents}`.
+    Costs roll up into the project total via the usual usage payload — but
+    note this endpoint does NOT persist a Node, so the spend only counts on
+    subsequent reads of the project tree if you choose to wire it up.
+    """
+    node = await session.get(Node, node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found")
+    return await _generate_react_files(node, session)
+
+
+@router.post("/{node_id}/export/react/zip")
+async def export_node_react_zip(node_id: str, session: AsyncSession = Depends(get_session)):
+    """Same Claude rewrite as `/export/react`, but streams a real .zip with the
+    files placed at their declared paths. Uses POST (not GET) because the
+    operation costs money and we don't want browsers prefetching it.
+    """
+    import io
+    import zipfile
+
+    from fastapi.responses import StreamingResponse
+
+    node = await session.get(Node, node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found")
+
+    result = await _generate_react_files(node, session)
+    files: dict[str, str] = result["files"]
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for path, content in files.items():
+            # Defense in depth: refuse paths that would escape the archive
+            # root via `..` or absolute prefixes. Pretty much paranoia for
+            # a single-user tool, but trivial to enforce.
+            safe = path.lstrip("/").replace("\\", "/")
+            if ".." in safe.split("/"):
+                continue
+            zf.writestr(safe, content)
+    buf.seek(0)
+
+    safe_title = (node.title or "atelier-variant").replace('"', "").replace("/", "-")
+    safe_title = "".join(c if c.isalnum() or c in "-_ " else "" for c in safe_title)[:80].strip() or "atelier-variant"
+    filename = f"{safe_title}-react.zip"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+            # Surface the cost so the dialog can update its pill from the
+            # response headers without parsing the binary body.
+            "X-Atelier-React-Cost-Cents": str(result["cost_cents"]),
+            "X-Atelier-React-Model": result["model_used"],
         },
     )
 
