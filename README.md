@@ -3,24 +3,17 @@
 > **Branch every critique. Cite every source.**
 > An infinite canvas for iterating on landing pages with AI that cites its references.
 
-Atelier was built for the [Push to Prod Hackathon with Genspark & Claude](https://devfolio.co/hackathons/push-to-prod) (Singapore, 2026-04-24) — an 5-hour sprint on **internal workflow problems solved with AI**.
+Atelier was built for the [Push to Prod Hackathon with Genspark & Claude](https://devfolio.co/hackathons/push-to-prod) (Singapore, 2026-04-24) — a 5-hour sprint on **internal workflow problems solved with AI**.
 
 ---
 
 ## The internal-workflow problem
 
-Every product team has the same broken loop:
-
-- A PM says "make it more premium."
-- A designer tries three things in parallel, loses two.
-- Stakeholder replies "no, more like Aesop."
-- AI tools make it worse — one-shot regeneration overwrites the last variant, and *"use a more modern palette"* is meaningless advice.
+Every product team has the same broken loop: PM says "make it more premium," designer tries three things in parallel and loses two, stakeholder replies "no, more like Aesop." AI tools make it worse — one-shot regeneration overwrites the last variant, and *"use a more modern palette"* is meaningless advice.
 
 **Atelier fixes the loop.** Every critique is a branch on an infinite canvas you can see, compare, and keep. Every suggestion is **grounded in real landing pages crawled from the open web** — so "make it premium" arrives as *"swap Inter for Cormorant Garamond 700 italic, use Aesop's #EDE5D8 parchment, ghost outlined CTA."*
 
 ![Atelier canvas — seed, two Claude variants, and an Opus-merged synthesis connected by dashed merge edges](docs/screenshots/canvas-with-merge.png)
-
-*A real session: one seed (Warm Minimal Plume) branches into two variants — one via grounded Critics ("Premium Luxury Dark Rewrite"), one via a PromptBar fork ("Serif italic hero heading"). Drag one onto the other and Opus synthesizes a fourth node with dashed edges showing each parent's contribution.*
 
 ---
 
@@ -28,152 +21,135 @@ Every product team has the same broken loop:
 
 ### Claude (Anthropic)
 
-Claude is the brain of every generative moment. Four distinct integrations, each model picked for the job:
+Claude is the brain of every generative moment. Five distinct integrations, each model picked for the job:
 
 | Flow | Model | What it does |
 |---|---|---|
 | **Fork rewrites** | Haiku 4.5 / Sonnet 4.6 / Opus 4.7 (user's pick) | Rewrites the full HTML given the user's instruction + project context. Streams back via SSE. |
-| **Design Critics** | Sonnet | Returns strict-JSON suggestions with `{category, severity, rationale}` against a target theme. Grounded in Genspark-crawled references (see below). |
-| **Drag-to-combine merge** | Opus | Synthesizes two sibling variants into a new branch. Preserves the target's structure, imports chosen aspects (typography / palette / layout / copy) from the source. |
-| **Feedback decomposition (AutoReason-style)** | Sonnet | Extracts atomic change items from a multi-point stakeholder paragraph; user approves the checklist. |
+| **Model shootout** | Haiku + Sonnet + Opus in parallel | Same prompt, three models, three sibling variants — bake-off in one click. |
+| **Design Critics** | Sonnet | Strict-JSON suggestions `{category, severity, rationale}`, grounded in Genspark-crawled references. |
+| **Drag-to-combine merge** | Opus | Synthesizes two siblings; preserves the target's structure, imports chosen aspects from the source. |
+| **Componentize-to-React** | Sonnet | One-shot rewrite of a variant into a Vite + React + Tailwind project (one component per section). |
 
-- **Prompt caching** on the long system prompts (critics rubric, merge rubric) via `cache_control: ephemeral` → ~90% cost drop on follow-up calls within a 5-minute window.
+- **Prompt caching** on every long system prompt via `cache_control: ephemeral` → ~90% cost drop on follow-up calls in the 5-minute window.
 - **BYOK** at runtime via `POST /settings/api-key`, or env `ANTHROPIC_API_KEY`. `/settings/status` reports which is active so the UI can warn.
+- **Strict-pin retry loop**: when a `kind: "color"` Style Pin is marked strict and Claude's output omits the exact hex, the server re-prompts once with a violation report before persisting.
 - Code: [apps/api/atelier_api/providers/claude.py](apps/api/atelier_api/providers/claude.py)
 
 ### Genspark
 
-Genspark's `@genspark/cli` (`gsk` binary) is wired in as a **grounded research layer for the Critics feature** — this is the integration that turns Claude's critiques from "AI slop" into "cite-your-sources."
+Genspark's `@genspark/cli` (`gsk` binary) is the **grounded research layer for Critics**. When the user toggles **"Ground with Genspark research"**:
 
-When a user enables **"Ground with Genspark research"** in the Critics dialog:
-
-1. Backend calls `gsk web_search "<theme> landing page design"` → top 6 URLs.
+1. `gsk web_search "<theme> landing page design"` → top 6 URLs.
 2. Parallel `gsk crawler` fan-out on the top 3 → full page markdown.
-3. That markdown is injected into Claude's critics prompt as `"REAL-WORLD REFERENCES"` context.
-4. Claude now returns suggestions like *"Swap Inter for Cormorant Garamond — every Awwwards luxury winner uses editorial serifs"* and *"Replace terracotta with burnished gold #B89A5A, matching Dribbble's luxury category consensus."*
-5. The UI renders the reference URLs as clickable chips so users can verify citations.
+3. Markdown injects into Claude's critic prompt as `"REAL-WORLD REFERENCES"`.
+4. Suggestions come back like *"Replace terracotta with burnished gold #B89A5A — the luxury category consensus on Dribbble"* with clickable citation chips.
 
-- **Why crawler fan-out and not `batch_crawl_url_and_answer`?** We tried the batch endpoint first; on the free plan it returned `"No content found"` on every URL. Individual `crawler` calls on the same URLs returned full markdown. So we fan out — still fast (~10s for 3 sites on top of Claude's ~25s).
-- **Graceful fallback:** missing `GENSPARK_API_KEY` or missing `gsk` binary → feature silently degrades to Claude-only. Users see a "Genspark returned no references" notice; nothing breaks.
-- **Windows subprocess fix:** `gsk` resolves to `gsk.CMD` on Windows, which `asyncio.create_subprocess_exec` can't execute (WinError 193). We offload to a thread via `asyncio.to_thread(subprocess.run)`.
+- Why crawler-fan-out instead of `batch_crawl_url_and_answer`: the batch endpoint returned `"No content found"` on every URL on the free plan; individual crawls returned full markdown. Still ~10s for 3 sites.
+- Graceful fallback: missing `GENSPARK_API_KEY` or missing `gsk` binary → feature silently degrades to Claude-only.
+- Windows fix: `gsk.CMD` can't be exec'd by `asyncio.create_subprocess_exec` (WinError 193). We offload to a thread via `asyncio.to_thread(subprocess.run)`.
 - Code: [apps/api/atelier_api/providers/genspark.py](apps/api/atelier_api/providers/genspark.py)
 
 ---
 
-## What you can do in Atelier
+## What you can do
 
-- **Seed a project** from a URL, pasted HTML, or one of 6 curated aesthetic templates (Editorial Serif, Kinetic Bold, Warm Minimal, Glassmorphic Tech, Vintage Poster, Tropical Playful — each tagged with a one-word vibe chip).
-- **Fork with Claude** from any node — type a prompt, pick your model, get a child variant with its full HTML rewritten. SSE stream shows per-step timing.
-- **Spawn grounded critics** — name a target vibe, toggle Genspark grounding, get cited suggestions, approve a subset, one rewrite ships them all.
-- **Drag one variant onto another** → MergeDialog fires, Opus combines them, dashed edges show which parent contributed what.
-- **Paste stakeholder feedback** → Claude decomposes the paragraph into atomic change items (AutoReason-style); user approves the checklist.
-- **Click Compare on any two nodes** → full-page side-by-side viewer with Desktop / Tablet / Mobile viewports (`1` / `2` / `3`), Split (draggable divider), and Overlay modes (`S` / `D` / `O`).
-- **Export any variant** → Copy HTML, Download `.html`, or Download `.zip` (bundles HTML + every media asset). Built for "take the result to Cursor" flows.
-- **Checkpoint a branch** → older siblings/ancestors archive (still in DB, hidden from default view) to keep the canvas fast. Toggle `Show archived` anytime.
+**Iteration & generation**
+- Fork from any node — short prompt, model dropdown (Haiku / Sonnet / Opus), live SSE stream of per-step timing.
+- **Model shootout** — same prompt, three siblings, one per model. Fork any variant card straight into a bake-off.
+- **Cost-fan confirm dialog** before any fork ≥2 variants — shows estimated `$x.xx × N` so nobody fan-outs by accident.
+- **Strict color-pin enforcement** — strict pins get a one-shot re-prompt round if the exact hex is missing.
+- Drag one variant onto another → Opus merges, dashed edges show which parent contributed what.
+- Paste a stakeholder paragraph → Sonnet decomposes it into atomic change items (AutoReason-style); user approves the checklist.
+
+**Project setup**
+- New Project dialog: pick a **template** (six curated aesthetics with vibe chips and live iframe thumbnails), **paste HTML**, or **seed from URL**.
+- Optional **Brand Kit** step in the same dialog — palette / type / voice fields → pre-loaded Style Pins on create, soft by default.
+- Six templates ship with believable fake brands (Plume, Solenne, etc.) so first-fork output looks real.
+
+**Constraints (Style Pins)**
+- Typed schemas: **color** (color picker + hex), **dimension** (number + unit dropdown), **enum** (e.g. font-weight 300–900), **font** (datalist of common families), **text** (free).
+- Per-pin **strict** toggle escalates prompt language to "ABSOLUTE / NON-NEGOTIABLE" and (for color) gates the retry loop.
+- Quick-add presets grouped **Visual** + **Voice & copy** — designers and copywriters share the same panel.
+- Max 12 pins per project; injected into every fork + critic prompt.
+
+**Comparing variants**
+- Compare any two nodes in the **side-by-side / split / overlay** viewer. `1` / `2` / `3` switch Desktop / Tablet / Mobile viewports; `S` / `D` / `O` switch modes.
+- **Diff lens** sidebar with categories: **Copy** (heading/CTA rewrites with before/after side-by-side), **Tokens** (CSS custom-property changes), **Structure** (added/removed elements), **Typography**, **Palette**, **Spacing**, **Effects**, **Layout**. Token-aware: consumer-side `var(--x)` diffs are suppressed when their token already moved.
+
+**Cost transparency**
+- Per-variant **cost pill** on every card showing the spend on that fork.
+- Project-wide **cost chip** in the top bar; Context Panel exposes a soft **cost cap** (USD).
+- When a fork would exceed the cap, the SSE job emits `cost-capped` and a persistent **CostCapBanner** appears with an **"Open Project Context"** CTA that scrolls to and pulses the cap input.
+- Sync `/fork` returns HTTP 402 with the same message — PromptBar routes the error into the same banner.
+
+**Sharing & handoff**
+- **Publish-to-URL** — beta. Variant tree copies into `assets/published/<slug>/`; mirrored to Supabase under `published/<slug>/...` when configured. Sandbox-server serves at `/p/<slug>/`. Re-publish is wipe-then-copy so removed assets don't leak.
+- **Export as HTML** (copy or download), **ZIP** (HTML + every media asset), or **React project** — Sonnet rewrites the HTML into a Vite + Tailwind scaffold (one component per section), streamed as a `.zip`.
+- Delete-node and delete-project clean up local + Supabase storage AND any published-tree leftovers.
+
+**Workspace hygiene**
+- Archive / restore projects from the dashboard — soft-flag in `project.settings`, hidden by default with a "Show N archived" toggle.
+- Modal stacking guard so re-opening a dialog from another doesn't double-mount.
+- Single **ErrorToast** (no native `alert()`); all error paths route through it.
 
 ---
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                         USER (browser)                            │
-│                    atelier-web.onrender.com                       │
-└────────────────────────────┬─────────────────────────────────────┘
-                             │
-               ┌─────────────┼─────────────┐
-               │             │             │
-               ▼             ▼             ▼
-   ┌────────────────┐  ┌─────────┐  ┌──────────────────┐
-   │  Render Static │  │ Render  │  │  Render Web      │
-   │  Vite SPA      │  │ Node    │  │  FastAPI         │
-   │  React Flow    │  │ sandbox │  │  Python 3.11     │
-   │  Tailwind      │  │ proxy   │  │                  │
-   └────────────────┘  └────┬────┘  └────┬─────────────┘
-                            │            │
-                            ▼            ▼
-                    ┌───────────────────────────────┐
-                    │      Supabase (US West)        │
-                    │  • Postgres (variants tree)    │
-                    │  • Storage (variant HTML + assets) │
-                    └───────────────────────────────┘
-
-External services the backend calls:
-  • Anthropic (Claude Haiku/Sonnet/Opus) — every generative moment
-  • Genspark (gsk CLI → web_search + crawler) — critics grounding
-  • MiniMax (image-01, T2V-01-Director) — hero-media generation (optional)
+Browser (Vite + React 18 + React Flow + Tailwind)
+   │
+   ▼
+FastAPI (Python 3.11, SQLAlchemy async, SSE jobs via asyncio.Queue)
+   │
+   ├── Claude (Anthropic SDK, prompt caching) — fork, critics, merge, feedback, react-export
+   ├── Genspark (gsk CLI: web_search + crawler) — critics grounding
+   ├── MiniMax (image-01, T2V-01-Director) — optional hero media
+   │
+   ├── SQLite (local)  ─ or ─  Postgres via Supabase session pooler (hosted)
+   └── Storage backend: local disk (dev) | Supabase Storage bucket (hosted)
+         └── sandbox-server on :4100 — proxies variant iframes with the right Content-Type
+              (Supabase forces text/plain on HTML; the proxy fixes that and serves /p/<slug>/)
 ```
-
-- **Why React Flow over tldraw:** purpose-built for tree/graph UIs with custom interactive nodes. Each variant is a 260×300 card with a live iframe thumbnail.
-- **Why SQLite → Postgres:** started single-user local; model code migrates to Postgres with a `DATABASE_URL` swap. Hosted uses Supabase session pooler (`aws-1-us-west-1.pooler.supabase.com:5432`) to sidestep Render's IPv6 limitation on direct Postgres hosts.
-- **Why a separate sandbox-server:** Supabase Storage forces `text/plain` on HTML objects, which breaks iframe rendering. The sandbox server (80-line Node) proxies variant URLs with the correct `Content-Type`.
-- **Why SSE over WebSockets:** streaming is one-way (server → client) for our flows; SSE gives auto-reconnect + works through every proxy. `asyncio.Queue` event bus in [apps/api/atelier_api/jobs.py](apps/api/atelier_api/jobs.py) fans events to connected clients per job.
 
 ---
 
 ## Setup
 
-### Requirements
-
-- **Node** ≥ 20 (tested on 25.6)
-- **Python** ≥ 3.11 (tested on 3.12)
-- **Git Bash** or POSIX shell on Windows, or macOS/Linux bash/zsh
-- **Anthropic API key** (required)
-- **Genspark API key** + `@genspark/cli` installed globally (optional — required only for grounded critics)
-
-### Install
+**Requirements:** Node ≥ 20, Python ≥ 3.11, bash/zsh shell, Anthropic API key. Optional: Genspark API key + `@genspark/cli` (for grounded critics), MiniMax key (for hero media).
 
 ```bash
 # 1. Clone + configure
 git clone https://github.com/bchuazw/atelier.git
 cd atelier
 cp .env.example .env.local
-# edit .env.local:
-#   ANTHROPIC_API_KEY=sk-ant-...
-#   GENSPARK_API_KEY=gsk-...   (optional)
-#   MINIMAX_API_KEY=...         (optional)
+# edit .env.local: ANTHROPIC_API_KEY=sk-ant-...   (GENSPARK_API_KEY, MINIMAX_API_KEY optional)
 
 # 2. Install deps
 cd apps/api && pip install -e . && cd ../..
 cd apps/web && npm install && cd ../..
 
-# 3. (Optional) Install Genspark CLI for grounded critics
+# 3. (Optional) grounded critics
 npm install -g @genspark/cli
+
+# 4. Run all three services in parallel
+npm run dev          # or: bash scripts/dev.sh
+# → API :8000, sandbox-server :4100, web :3000 — open http://localhost:3000
 ```
 
-### Run
+### Environment variables
 
-**One command** (all three services):
-
-```bash
-npm run dev
-```
-
-This starts the API (`:8000`), sandbox-server (`:4100`), and web (`:3000`) in parallel. Open **http://localhost:3000**.
-
-**Three terminals** if you prefer:
-
-```bash
-# Terminal 1 — backend
-cd apps/api && python -m uvicorn atelier_api.main:app --reload --port 8000
-
-# Terminal 2 — sandbox server
-cd sandbox-server && ATELIER_ASSETS_DIR=../assets node server.js
-
-# Terminal 3 — frontend
-cd apps/web && npm run dev
-```
-
----
-
-## Demo flow (2 minutes)
-
-1. **Pick a template** from 6 curated aesthetics (or paste HTML / URL). Start from **Warm Minimal** for maximum contrast with luxury critiques.
-2. **Open Critics** → theme `premium luxury` → toggle **Ground with Genspark research**. ~35s later, 8 suggestions with hex codes appear, each citing a real landing page (Aesop, Awwwards, Dribbble).
-3. **Apply.** A new variant lands on the canvas as a child node. Before/after viewer auto-opens, both full pages side-by-side.
-4. **Compare any two.** Click the `Compare` button on any node (Columns icon, cyan). TopBar pill guides the flow. Viewer opens, full-page side-by-side with viewport keys `1/2/3`.
-5. **Drag one variant onto another** → Opus merges them. Dashed edges show which parent donated what.
-6. **Export** any variant as HTML, or bundle HTML + media assets as `.zip`. Paste into Cursor / VS Code / your editor.
+| Var | Required? | Purpose |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | yes | Claude calls (or pass via UI BYOK at runtime) |
+| `GENSPARK_API_KEY` | optional | Grounded critics (with `@genspark/cli`) |
+| `MINIMAX_API_KEY` | optional | Hero image / video generation |
+| `ATELIER_DB_URL` | optional | Defaults to local SQLite; set to Postgres URL for hosted |
+| `ATELIER_STORAGE_MODE` | optional | `local` (default) or `supabase` |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` / `SUPABASE_BUCKET` | hosted | Storage bucket (default bucket: `variants`) |
+| `ATELIER_SANDBOX_PUBLIC_URL` | hosted | Public URL of the sandbox proxy (mints `/p/<slug>/` URLs) |
+| `ATELIER_ALLOWED_ORIGINS` | hosted | Comma-separated CORS origins |
 
 ---
 
@@ -182,90 +158,92 @@ cd apps/web && npm run dev
 ```
 atelier/
 ├── apps/
-│   ├── api/                        # FastAPI + SQLAlchemy + Python 3.11
+│   ├── api/                    # FastAPI + SQLAlchemy + Python 3.11
 │   │   └── atelier_api/
-│   │       ├── main.py
-│   │       ├── providers/          # claude.py, genspark.py, minimax.py
-│   │       ├── routes/             # projects, nodes, fork, media, merge, feedback, critics, settings
-│   │       ├── db/                 # models.py, session.py
-│   │       ├── sandbox/            # fetcher, mutator
-│   │       └── storage/            # local + supabase backends
-│   └── web/                        # Vite + React 18 + Tailwind + React Flow
+│   │       ├── providers/      # claude.py, genspark.py, minimax.py
+│   │       ├── routes/         # projects, nodes, fork, media, merge, feedback, critics, settings
+│   │       ├── db/             # models.py, session.py
+│   │       ├── sandbox/        # fetcher, mutator
+│   │       └── storage/        # local + supabase backends
+│   └── web/                    # Vite + React 18 + Tailwind + React Flow
 │       └── src/
-│           ├── components/         # Canvas, VariantNode, BeforeAfterViewer, ForkDialog,
-│           │                       #   MediaDialog, MergeDialog, FeedbackDialog, CriticsDialog,
-│           │                       #   ExportDialog, TopBar, PromptBar, NewProjectDialog, …
-│           └── lib/api.ts          # all backend calls + SSE subscribe helpers
-├── sandbox-server/                 # 80-line Node static proxy for /variant/<id>/*
-├── demo-video/                     # capture.mjs, narrate.mjs, composition.html, narration.md
-├── assets/                         # variant artifacts (gitignored)
-├── render.yaml                     # 3-service Render blueprint
-└── PLAN.md                         # full design spec (30+ pages)
+│           ├── components/     # Canvas, VariantNode, BeforeAfterViewer, ForkDialog,
+│           │                   #   MergeDialog, FeedbackDialog, CriticsDialog, ExportDialog,
+│           │                   #   NewProjectDialog (+Brand Kit), ContextPanel, CostCapBanner,
+│           │                   #   ErrorToast, EmptyState, TopBar, PromptBar, …
+│           └── lib/            # api.ts, diffStyles.ts, store.ts
+├── sandbox-server/             # Node static proxy for /variant/<id>/* and /p/<slug>/*
+├── scripts/dev.sh              # one-shot dev runner
+├── render.yaml                 # 3-service Render blueprint
+└── PLAN.md                     # full design spec
 ```
 
 ---
 
-## API surface
+## API surface (v1)
 
 ```
 # Projects
-GET    /api/v1/projects
-POST   /api/v1/projects                 { name, seed_url? | seed_html? }
-GET    /api/v1/projects/:id/tree        ?include_archived=true
-PATCH  /api/v1/projects/:id             { context?, active_checkpoint_id?, clear_checkpoint? }
+GET    /api/v1/projects                                ?include_archived=true
+POST   /api/v1/projects                                { name, seed_url? | seed_html?, style_pins? }
+GET    /api/v1/projects/:id/tree                       ?include_archived=true
+PATCH  /api/v1/projects/:id                            { context?, style_pins?, cost_cap_cents?, archived?, name?, active_checkpoint_id? }
 DELETE /api/v1/projects/:id
 
 # Nodes
 GET    /api/v1/nodes/:id
-PATCH  /api/v1/nodes/:id                { position_x?, position_y?, pinned?, title? }
+PATCH  /api/v1/nodes/:id                               { position_x?, position_y?, pinned?, title? }
+DELETE /api/v1/nodes/:id                               # cascades to descendants + storage + published slug
 GET    /api/v1/nodes/:id/ancestors
-GET    /api/v1/nodes/:id/export         # → {html, media_assets[], lineage, sandbox_url}
-GET    /api/v1/nodes/:id/export/zip     # → application/zip (HTML + assets)
+GET    /api/v1/nodes/:id/export                        # → {html, media_assets[], lineage, sandbox_url}
+GET    /api/v1/nodes/:id/export/zip                    # → application/zip
+POST   /api/v1/nodes/:id/export/react                  # → {files, model_used, token_usage, cost_cents}
+POST   /api/v1/nodes/:id/export/react/zip              # → application/zip
+POST   /api/v1/nodes/:id/publish                       # → {slug, public_url, published_at}
+GET    /api/v1/nodes/:id/publish
 
-# Generative jobs (all SSE-streamed)
-POST   /api/v1/nodes/:id/fork/jobs         { prompt, model }
-POST   /api/v1/nodes/:id/media/jobs        { prompt, kind: image|video }
-POST   /api/v1/nodes/:id/merge/jobs        { source_id, aspects[], model }
+# Generative jobs (SSE-streamed)
+POST   /api/v1/nodes/:id/fork/jobs                     { prompt, model, references? }
+POST   /api/v1/nodes/:id/media/jobs                    { prompt, kind: image|video }
+POST   /api/v1/nodes/:id/merge/jobs                    { source_id, aspects[], model }
 GET    /api/v1/{flow}/jobs/:job_id/stream
 
 # Analysis
-POST   /api/v1/nodes/:id/feedback/analyze  { message, model? }
-POST   /api/v1/nodes/:id/critics/analyze   { theme, aspects?, model?, use_grounding? }
+POST   /api/v1/nodes/:id/feedback/analyze              { message, model? }
+POST   /api/v1/nodes/:id/critics/analyze               { theme, aspects?, model?, use_grounding? }
 ```
 
 ---
 
 ## Deployment (Render + Supabase)
 
-Three Render services defined in [render.yaml](render.yaml):
+Three services in [render.yaml](render.yaml):
 
 - `atelier-api` (Python) — FastAPI, installs `@genspark/cli` at build time
-- `atelier-web` (Static) — Vite build, rewrites `/*` to `/index.html`
-- `atelier-sandbox` (Node) — proxies variant iframes with correct `Content-Type`
+- `atelier-web` (Static) — Vite build, rewrites `/*` → `/index.html`
+- `atelier-sandbox` (Node) — proxies variant + published iframes with correct `Content-Type`
 
-One Supabase project for:
-- Postgres (via session pooler, IPv4)
-- Storage bucket `variants` (public, HTML served via sandbox proxy)
-
-To deploy:
-
-1. Create services from `render.yaml` via `render blueprint deploy`
-2. Set secrets in each service: `ANTHROPIC_API_KEY`, `GENSPARK_API_KEY`, `MINIMAX_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ATELIER_DB_URL`, `ATELIER_SANDBOX_PUBLIC_URL`, `ATELIER_ALLOWED_ORIGINS`.
-3. Push → auto-deploys.
+Secrets per service: `ANTHROPIC_API_KEY`, `GENSPARK_API_KEY`, `MINIMAX_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ATELIER_DB_URL`, `ATELIER_STORAGE_MODE=supabase`, `ATELIER_SANDBOX_PUBLIC_URL`, `ATELIER_ALLOWED_ORIGINS`.
 
 ---
 
-## Screenshots
+## What's new (April 2026)
 
-| | |
-|---|---|
-| ![Grounded critics](docs/screenshots/grounded-critics-live.png) | ![Feedback AutoReason decomposition](docs/screenshots/feedback-autoreason.png) |
-| **Grounded Critics** — Genspark pulls 3 live landing pages (Dribbble / Pinterest / Awwwards chips); Claude cites them with specific hex codes + typography. Severity-tagged, user approves a subset. | **Feedback (AutoReason)** — paste a stakeholder paragraph; Sonnet decomposes it into 6 atomic changes with category tags (PALETTE / COPY / TYPOGRAPHY) + rationale. One rewrite applies them all. |
-| ![Full-page side-by-side viewer](docs/screenshots/viewer-side-by-side.png) | ![Template picker with vibe chips](docs/screenshots/ux-fixes-new-project.png) |
-| **Compare viewer** — Side-by-side shows both FULL pages scaled to fit (no cropped halves). Also has Split and Overlay modes + Desktop/Tablet/Mobile viewports via keyboard shortcuts. | **Template picker** — 6 curated aesthetic starters with vibe chips (PREMIUM / BRUTALIST / CALM / FUTURISTIC / RETRO / PLAYFUL). Each card renders a live iframe of the actual HTML. |
+- **Componentize-to-React export** — Sonnet rewrites a variant into a Vite + React + Tailwind project (one file per section), streamed as `.zip` with cost surfaced in response headers.
+- **Token-aware diff lens** — CSS custom-property changes get their own `Tokens` category; consumer-side `var(--x)` noise is suppressed.
+- **Publish-to-URL (beta)** — local + Supabase mirroring; hosted variants get a stable `/p/<slug>/` URL.
+- **Cost cap polish** — persistent `CostCapBanner` with one-click jump to the cap input; PromptBar 402s flow into the same banner.
+- **Per-project cost rollup + soft cap** — lifetime spend chip in the top bar; refusal pre-LLM if over cap.
+- **Workspace hygiene** — archive / restore projects from the dashboard.
+- **`delete_node`** now cleans up published slugs alongside variant trees.
+- **Brand Kit step** in New Project — palette/type/voice → pre-loaded Style Pins.
+- **Strict color pins** — regex match with hex boundary; one-shot re-prompt on violation.
+- **Typed Style Pin schemas** — color picker, dimension+unit, enum, font datalist, text.
+- **Diff lens** got a **Copy** tab with before/after rewrites side-by-side.
+- **Cost pill** on every variant card; **structure diff** in the lens; **ErrorToast** replaces native alerts; voice-pin presets in Context Panel.
 
 ---
 
 ## License
 
-MIT (intended). The repo is public at <https://github.com/bchuazw/atelier> for judge verification.
+MIT (intended). Repo is public at <https://github.com/bchuazw/atelier> for judge verification.
