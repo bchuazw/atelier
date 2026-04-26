@@ -452,6 +452,26 @@ export function subscribeToJob<TChild = MediaChildDTO>(
       }
       if (ev.type === "node-ready") {
         finalResult = { ok: true, child: ev.data as TChild };
+      } else if (ev.type === "cost-capped") {
+        // Soft cost cap was hit on the SSE fork path. Surface the
+        // persistent banner instead of routing this through the generic
+        // error toast — the user needs an explicit jump-to-cap-input
+        // affordance, not a transient red strip. We mark the result with
+        // a sentinel `cost-capped` so onFinal callers can choose to
+        // suppress their own error UI (the banner replaces it).
+        const data = ev.data as { total_cost_cents?: number; cost_cap_cents?: number };
+        if (
+          typeof data?.total_cost_cents === "number" &&
+          typeof data?.cost_cap_cents === "number"
+        ) {
+          import("./store").then(({ useUI }) => {
+            useUI.getState().showCostCapBanner({
+              total_cost_cents: data.total_cost_cents!,
+              cost_cap_cents: data.cost_cap_cents!,
+            });
+          });
+        }
+        finalResult = { ok: false, error: "cost-capped" };
       } else if (ev.type === "error") {
         finalResult = { ok: false, error: ev.data?.message ?? "unknown error" };
       } else if (ev.type === "done") {

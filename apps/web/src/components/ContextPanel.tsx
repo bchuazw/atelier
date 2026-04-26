@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X, BookOpen, Loader2, Save, Pin, Plus, Trash2, Lock, DollarSign } from "lucide-react";
 import { api, type StylePin, type StylePinKind } from "@/lib/api";
 import { useUI } from "@/lib/store";
@@ -74,7 +74,13 @@ const PIN_PRESETS: PresetGroup[] = [
 ];
 
 export default function ContextPanel() {
-  const { contextPanelOpen, closeContextPanel, project, setProject } = useUI();
+  const {
+    contextPanelOpen,
+    closeContextPanel,
+    project,
+    setProject,
+    dismissCostCapBanner,
+  } = useUI();
   const [draftContext, setDraftContext] = useState("");
   const [draftPins, setDraftPins] = useState<StylePin[]>([]);
   // Cap input is a free-text dollar string ("5", "12.50", or "" for no cap).
@@ -83,6 +89,12 @@ export default function ContextPanel() {
   const [draftCapDollars, setDraftCapDollars] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  // Brief amber pulse on the cap row, triggered when CostCapBanner's
+  // "Open Project Context" action dispatches `atelier:focus-cap-input`.
+  // Lets the user see exactly which input the banner was pointing at.
+  const capRowRef = useRef<HTMLDivElement | null>(null);
+  const capInputRef = useRef<HTMLInputElement | null>(null);
+  const [capPulse, setCapPulse] = useState(false);
 
   useEffect(() => {
     if (contextPanelOpen) {
@@ -93,6 +105,24 @@ export default function ContextPanel() {
       setSaved(false);
     }
   }, [contextPanelOpen, project?.context, project?.style_pins, project?.cost_cap_cents]);
+
+  // Listen for the cap-input focus request dispatched by CostCapBanner.
+  // We scroll the row into view, focus + select the input, and trigger
+  // a 2s amber pulse so the eye lands on it. Only active while the
+  // panel is mounted, so the listener naturally tears down on close.
+  useEffect(() => {
+    if (!contextPanelOpen) return;
+    const onFocusCap = () => {
+      capRowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      capInputRef.current?.focus();
+      capInputRef.current?.select();
+      setCapPulse(true);
+      window.setTimeout(() => setCapPulse(false), 2000);
+    };
+    window.addEventListener("atelier:focus-cap-input", onFocusCap as EventListener);
+    return () =>
+      window.removeEventListener("atelier:focus-cap-input", onFocusCap as EventListener);
+  }, [contextPanelOpen]);
 
   if (!contextPanelOpen) return null;
 
@@ -124,6 +154,12 @@ export default function ContextPanel() {
         style_pins: res.style_pins ?? pins,
         cost_cap_cents: res.cost_cap_cents ?? null,
       });
+      // If the user just raised the cap above current spend (or cleared
+      // it entirely), the persistent CostCapBanner is no longer relevant
+      // — dismiss it here so they don't have to click X separately.
+      const newCap = res.cost_cap_cents ?? null;
+      const spent = project.total_cost_cents ?? 0;
+      if (newCap === null || newCap > spent) dismissCostCapBanner();
       setSaved(true);
     } finally {
       setSaving(false);
@@ -180,7 +216,15 @@ export default function ContextPanel() {
           {/* Soft cost cap — when the project's lifetime spend reaches this
               amount, fork attempts fail fast (HTTP 402 on sync, `cost-capped`
               SSE event on async) before the LLM is called. Empty = no cap. */}
-          <div>
+          <div
+            ref={capRowRef}
+            className={
+              "rounded-lg transition-shadow duration-500 " +
+              (capPulse
+                ? "ring-2 ring-amber-400 ring-offset-2 ring-offset-stone-50 -m-1 p-1"
+                : "")
+            }
+          >
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1.5">
                 <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
@@ -196,6 +240,7 @@ export default function ContextPanel() {
             <div className="flex items-center gap-1.5">
               <span className="text-zinc-400 text-[12px] px-1">$</span>
               <input
+                ref={capInputRef}
                 type="number"
                 inputMode="decimal"
                 min="0"

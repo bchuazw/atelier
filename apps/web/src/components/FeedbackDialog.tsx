@@ -135,6 +135,13 @@ export default function FeedbackDialog() {
           },
           async (result) => {
             if (!result.ok || !result.child) {
+              // Cost-cap is surfaced via the persistent CostCapBanner
+              // (set by subscribeToJob); close the dialog so the user can
+              // see + act on it instead of a redundant inline error.
+              if (result.error === "cost-capped") {
+                closeFeedback();
+                return;
+              }
               setError(result.error || "Apply failed");
               setStage("review");
               return;

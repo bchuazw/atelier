@@ -15,6 +15,7 @@ import CriticsDialog from "./components/CriticsDialog";
 import ExportDialog from "./components/ExportDialog";
 import UndoToast from "./components/UndoToast";
 import ErrorToast from "./components/ErrorToast";
+import CostCapBanner from "./components/CostCapBanner";
 import { useUI } from "./lib/store";
 import { api } from "./lib/api";
 
@@ -142,6 +143,10 @@ export default function App() {
           {project ? <Canvas /> : <EmptyState onNewProject={() => setNewProjectOpen(true)} />}
         </ErrorBoundary>
         {project && <PromptBar />}
+        {/* Cost-cap banner is anchored to the canvas region (not the
+            top-right ErrorToast) because it's contextual to the current
+            project and needs more horizontal real estate for its CTAs. */}
+        <CostCapBanner />
       </main>
 
       <NewProjectDialog open={newProjectOpen} onClose={() => setNewProjectOpen(false)} />

@@ -65,6 +65,11 @@ type UIState = {
   // Non-blocking error notification. Replaces native `alert()` which was
   // freezing the page on server failures and looked unprofessional.
   errorToast: { message: string; expiresAt: number } | null;
+  // Persistent cost-cap banner. Set when an SSE fork job emits `cost-capped`
+  // (the project's lifetime spend met the user-set cap). Stays put until the
+  // user dismisses it or successfully forks again — the message and CTA need
+  // more dwell time than the auto-fading errorToast.
+  costCapBanner: { total_cost_cents: number; cost_cap_cents: number } | null;
 
   // actions
   setTree: (project: ProjectDTO | null, nodes: NodeDTO[], edges: EdgeDTO[]) => void;
@@ -116,6 +121,11 @@ type UIState = {
   // also click X. Replaces every prior `alert()` call site.
   showError: (message: string, ttlMs?: number) => void;
   dismissError: () => void;
+  // Surface the persistent cost-cap banner. SSE fork-job consumers call
+  // this when the stream emits `cost-capped` so the user sees a clear
+  // explanation + a one-click jump to the cap input.
+  showCostCapBanner: (data: { total_cost_cents: number; cost_cap_cents: number }) => void;
+  dismissCostCapBanner: () => void;
 };
 
 export const useUI = create<UIState>((set) => ({
@@ -146,6 +156,7 @@ export const useUI = create<UIState>((set) => ({
   sessionUsage: { input: 0, output: 0, cache_read: 0, cache_creation: 0 },
   pendingUndo: null,
   errorToast: null,
+  costCapBanner: null,
 
   setTree: (project, nodes, edges) => set({ project, nodes, edges }),
   setProject: (project) => set({ project }),
@@ -317,4 +328,6 @@ export const useUI = create<UIState>((set) => ({
     }, ttlMs + 50);
   },
   dismissError: () => set({ errorToast: null }),
+  showCostCapBanner: (data) => set({ costCapBanner: data }),
+  dismissCostCapBanner: () => set({ costCapBanner: null }),
 }));

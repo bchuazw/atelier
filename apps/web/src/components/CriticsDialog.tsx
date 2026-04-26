@@ -177,6 +177,13 @@ export default function CriticsDialog() {
           },
           async (result) => {
             if (!result.ok || !result.child) {
+              // Cost-cap surfaces via the persistent CostCapBanner; close
+              // out of this dialog so the user can interact with it
+              // rather than an inline error duplicating the same info.
+              if (result.error === "cost-capped") {
+                closeCritics();
+                return;
+              }
               setError(result.error || "Apply failed");
               setStage("review");
               return;
