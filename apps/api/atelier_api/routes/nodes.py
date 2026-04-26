@@ -169,6 +169,12 @@ async def delete_node(node_id: str, session: AsyncSession = Depends(get_session)
         try:
             if target.exists():
                 _shutil.rmtree(target, ignore_errors=True)
+            # Best-effort Supabase cleanup. Wrapped in the same try/except as
+            # the local rmtree so a Supabase outage doesn't block the DB
+            # delete from being acknowledged. A stale `published/<slug>/`
+            # prefix in the bucket is harmless — it'll just keep serving
+            # until manually removed or the slug is re-published (upsert).
+            await storage.delete_published_tree(slug)
             published_cleaned += 1
         except Exception as e:  # pragma: no cover — defensive
             _logging.getLogger(__name__).warning(
@@ -382,6 +388,21 @@ async def publish_node(node_id: str, session: AsyncSession = Depends(get_session
         dst = published_root / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
+
+    # Mirror the tree to Supabase under `published/<slug>/...` so the hosted
+    # sandbox-server (proxy mode) can serve it at `/p/<slug>/`. Local mode is
+    # a no-op. Failures here MUST NOT roll back the local copy — a successful
+    # publish in dev shouldn't fail because the operator hasn't configured
+    # Supabase yet (or the upload is flaky). We log and move on; callers can
+    # re-publish to retry the upload.
+    import logging as _logging
+
+    try:
+        await storage.upload_published_tree(slug, published_root)
+    except Exception as e:  # pragma: no cover — network-dependent
+        _logging.getLogger(__name__).warning(
+            "supabase publish upload failed for slug=%s: %s", slug, e
+        )
 
     published_at = now_iso()
     public_url = _public_url_for_slug(slug)

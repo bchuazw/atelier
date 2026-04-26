@@ -185,6 +185,87 @@ class SupabaseStorage:
             )
             return len(prefixes)
 
+    # --- Publish-to-URL support -----------------------------------------
+    # Published trees live under the `published/<slug>/...` prefix inside
+    # the same `supabase_bucket` that variants use. The hosted sandbox-server
+    # (sandbox-server/server.js) resolves `/p/<slug>/<rest>` to
+    # `<SUPABASE_URL>/storage/v1/object/public/<bucket>/published/<slug>/<rest>`.
+    # Keep this prefix stable — operators rely on it for manual inspection.
+    _PUBLISHED_PREFIX = "published"
+
+    def _published_object_path(self, slug: str, rel_path: str = "") -> str:
+        rel = rel_path.lstrip("/").replace("\\", "/")
+        if rel:
+            return f"{self._PUBLISHED_PREFIX}/{slug}/{rel}"
+        return f"{self._PUBLISHED_PREFIX}/{slug}"
+
+    async def upload_published_tree(self, slug: str, src_dir: Path) -> None:
+        """Upload the variant tree at `src_dir` to `published/<slug>/...`.
+
+        Mirrors `upload_variant_tree` but rooted at the `published/` prefix.
+        Caller is expected to have already written the tree to disk; this
+        runs in addition to the local copy so both local-disk and hosted
+        Supabase serving stay in sync after a publish.
+        """
+        if not src_dir.exists():
+            raise FileNotFoundError(f"published src_dir missing: {src_dir}")
+
+        files = [p for p in src_dir.rglob("*") if p.is_file()]
+        log.info("[supabase-storage] uploading %d file(s) for publish slug=%s", len(files), slug)
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            for fp in files:
+                rel = fp.relative_to(src_dir).as_posix()
+                content_type, _ = mimetypes.guess_type(fp.name)
+                content_type = content_type or "application/octet-stream"
+                object_path = self._published_object_path(slug, rel)
+                upload_url = f"{self.url}/storage/v1/object/{self.bucket}/{object_path}"
+                data = fp.read_bytes()
+                resp = await client.post(
+                    upload_url,
+                    headers=self._headers(content_type=content_type),
+                    content=data,
+                )
+                if resp.status_code >= 400:
+                    raise RuntimeError(
+                        f"supabase publish upload failed [{resp.status_code}] {object_path}: {resp.text[:200]}"
+                    )
+
+    async def delete_published_tree(self, slug: str) -> int:
+        """Delete every object under `published/<slug>/` from the bucket.
+
+        Best-effort: the caller wraps this in a try/except so a Supabase
+        outage during cascade-delete leaves a stale prefix rather than
+        rolling back the DB. The next re-publish at the same slug overwrites
+        cleanly because uploads use `x-upsert: true`.
+        """
+        prefix = f"{self._PUBLISHED_PREFIX}/{slug}"
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            objects = await self._list_objects(client, prefix)
+            if not objects:
+                return 0
+            prefixes = [o["path"] for o in objects]
+            resp = await client.request(
+                "DELETE",
+                f"{self.url}/storage/v1/object/{self.bucket}",
+                headers={
+                    "Authorization": f"Bearer {self.service_key}",
+                    "apikey": self.service_key,
+                    "Content-Type": "application/json",
+                },
+                json={"prefixes": prefixes},
+            )
+            if resp.status_code >= 400:
+                raise RuntimeError(
+                    f"supabase publish delete failed [{resp.status_code}]: {resp.text[:200]}"
+                )
+            log.info(
+                "[supabase-storage] deleted %d published object(s) for slug=%s",
+                len(prefixes),
+                slug,
+            )
+            return len(prefixes)
+
     def variant_url(self, variant_id: str, rel_path: str = "") -> str:
         # Prefer the proxy when configured so HTML renders with correct MIME.
         if self.sandbox_public_url:

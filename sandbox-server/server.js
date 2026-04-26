@@ -191,6 +191,43 @@ async function serveProxy(variantId, rest, res) {
   res.end(upstream.body);
 }
 
+// Proxy-mode counterpart of `servePublished`. Resolves a slug to
+// `<SUPABASE_URL>/storage/v1/object/public/<bucket>/published/<slug>/<rest>`
+// — the same prefix shape that `storage/supabase.py::upload_published_tree`
+// writes to. Cache-Control matches the local-disk path (30s) so behavior is
+// indistinguishable from a developer's POV.
+async function serveProxyPublished(slug, rest, res) {
+  const cleanRest = rest.replace(/^\/+/, "");
+  const sourceUrl = `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/published/${slug}/${cleanRest}`;
+  let upstream;
+  try {
+    upstream = await proxyFetch(sourceUrl);
+  } catch (err) {
+    console.error("proxy fetch error (published):", err.message, "url:", sourceUrl);
+    send(res, 502, `Upstream fetch failed: ${err.message}`);
+    return;
+  }
+  if (upstream.statusCode === 404) {
+    // Pass through 404 rather than masking it as 501 — the slug genuinely
+    // doesn't exist in the bucket.
+    send(res, 404, `Missing: ${cleanRest}`);
+    return;
+  }
+  if (upstream.statusCode !== 200) {
+    send(res, upstream.statusCode, `Upstream ${upstream.statusCode}`);
+    return;
+  }
+  res.writeHead(200, {
+    "Content-Type": mimeFor(cleanRest),
+    "Content-Length": upstream.body.length,
+    "Access-Control-Allow-Origin": WEB_ORIGIN,
+    "Cache-Control": "public, max-age=30",
+    "X-Frame-Options": "ALLOWALL",
+    "Content-Security-Policy": "frame-ancestors *",
+  });
+  res.end(upstream.body);
+}
+
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -202,10 +239,14 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    // Published-URL route — `/p/<slug>/...` serves files from
-    // `<assets>/published/<slug>/`. Always local-disk (publish doesn't
-    // upload to Supabase yet — see Publish-to-URL ticket); proxy mode
-    // therefore returns a 501 rather than silently 404'ing.
+    // Published-URL route — `/p/<slug>/...`.
+    //   local mode: serves files from `<assets>/published/<slug>/` on disk.
+    //   proxy mode: streams from Supabase Storage at
+    //     `<SUPABASE_URL>/storage/v1/object/public/<bucket>/published/<slug>/...`
+    //     (matches the prefix written by `storage/supabase.py::upload_published_tree`).
+    //   proxy mode without SUPABASE_URL: 501 — this deployment is wired
+    //     for hosted serving but operator hasn't supplied a Supabase project,
+    //     so hosted publish is genuinely unavailable.
     const publishedMatch = url.pathname.match(/^\/p\/([^/]+)(\/.*)?$/);
     if (publishedMatch) {
       const [, slug, restRaw] = publishedMatch;
@@ -213,7 +254,11 @@ const server = createServer(async (req, res) => {
       if (rest === "/") rest = "/index.html";
       else if (rest.endsWith("/")) rest += "index.html";
       if (MODE === "proxy") {
-        send(res, 501, "Published URLs are only available in local sandbox mode");
+        if (!SUPABASE_URL) {
+          send(res, 501, "Published URLs are not available — SUPABASE_URL not configured");
+          return;
+        }
+        await serveProxyPublished(slug, rest, res);
         return;
       }
       await servePublished(slug, rest, res);

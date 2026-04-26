@@ -58,3 +58,22 @@ class StorageBackend(Protocol):
         accumulates leftover variants from test runs).
         """
         ...
+
+    async def upload_published_tree(self, slug: str, src_dir: Path) -> None:
+        """Mirror `upload_variant_tree` for the publish-to-URL flow.
+
+        Writes the files under `published/<slug>/...` in the configured
+        Supabase bucket so the hosted sandbox-server proxy can serve
+        `/p/<slug>/`. Local-mode is a no-op (the sandbox-server reads the
+        files directly from disk).
+        """
+        ...
+
+    async def delete_published_tree(self, slug: str) -> int:
+        """Remove every object under `published/<slug>/` from backing storage.
+
+        Best-effort; returns the number of objects removed. Used by
+        cascading deletes (project / variant) so stale published trees
+        don't keep serving after their source variant is gone.
+        """
+        ...
