@@ -375,7 +375,11 @@ def _parse_react_export_json(text: str) -> dict:
 async def _project_cost_state(session: AsyncSession, project_id: str) -> tuple[int, int | None]:
     """Mirror of `routes.fork._project_cost_status` — kept local so this route
     file doesn't import from fork.py (would create a fan-out import). Returns
-    (total_cost_cents, cost_cap_cents). Cap is None when unset."""
+    (total_cost_cents, cost_cap_cents). Cap is None when unset.
+
+    The total now includes prior React-export spend stored under
+    `project.settings["cost_events"]` so a chain of React exports correctly
+    accumulates against the cap (those calls don't persist a Node)."""
     from sqlalchemy import select
 
     from atelier_api.db.models import Project
@@ -383,8 +387,8 @@ async def _project_cost_state(session: AsyncSession, project_id: str) -> tuple[i
     nodes = (
         (await session.execute(select(Node).where(Node.project_id == project_id))).scalars().all()
     )
-    total = project_total_cost_cents(nodes)
     project = await session.get(Project, project_id)
+    total = project_total_cost_cents(nodes, project=project)
     raw_cap = (project.settings or {}).get("cost_cap_cents") if project else None
     cap = int(raw_cap) if isinstance(raw_cap, (int, float)) and raw_cap > 0 else None
     return total, cap
@@ -455,6 +459,48 @@ async def _generate_react_files(node: Node, session: AsyncSession) -> dict:
 
     usage = resp.usage_dict
     cost_cents = cost_cents_for_usage(usage, resp.model)
+
+    # Persist this spend as a project-level cost event so it rolls into
+    # `project.total_cost_cents` (and therefore the cap check) on subsequent
+    # calls. The React-export endpoint deliberately doesn't persist a Node,
+    # so without this the spend would be invisible to the rollup.
+    #
+    # We re-fetch the project (rather than reusing the one from
+    # `_project_cost_state`) because the LLM call may have taken several
+    # seconds and the row might have changed underneath us — fork/critic
+    # commits could have written to settings in the interim. SQLAlchemy
+    # JSON columns don't dirty-track in-place mutations, so we build a new
+    # dict + reassign and call `flag_modified` (same trick `publish_node`
+    # uses for `node.reasoning`).
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from atelier_api.db.models import Project
+
+    project = await session.get(Project, node.project_id)
+    if project is not None:
+        new_settings = dict(project.settings or {})
+        events = list(new_settings.get("cost_events") or [])
+        events.append(
+            {
+                "type": "react_export",
+                "node_id": node.id,
+                "model": resp.model,
+                "token_usage": usage,
+                "cost_cents": int(cost_cents),
+                "ts": now_iso(),
+            }
+        )
+        # Cap retention so a long-lived project's settings JSON doesn't grow
+        # unbounded. 200 events is generous for a single-user beta — at
+        # ~12c/event that's $24 of React-export history before we start
+        # dropping the oldest entries from the rollup.
+        if len(events) > 200:
+            events = events[-200:]
+        new_settings["cost_events"] = events
+        project.settings = new_settings
+        flag_modified(project, "settings")
+        await session.commit()
+
     return {
         "files": parsed["files"],
         "model_used": resp.model,

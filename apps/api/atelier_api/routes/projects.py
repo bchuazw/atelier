@@ -286,7 +286,7 @@ async def get_tree(
     # rounds floats. Always computed across `all_nodes`, not the visible
     # subset — a checkpoint hides nodes from the canvas but their cost still
     # counts against the project's lifetime spend.
-    total_cost_cents = project_total_cost_cents(all_nodes)
+    total_cost_cents = project_total_cost_cents(all_nodes, project=project)
     # Soft cap stored as int cents in project.settings, or null when unset.
     raw_cap = proj_settings.get("cost_cap_cents")
     cost_cap_cents: int | None = int(raw_cap) if isinstance(raw_cap, (int, float)) and raw_cap > 0 else None

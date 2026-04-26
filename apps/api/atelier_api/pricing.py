@@ -51,11 +51,46 @@ def cost_cents_for_usage(usage: dict | None, model: str | None) -> int:
     return int(round(cost_usd * 100))
 
 
-def project_total_cost_cents(nodes: list) -> int:
-    """Sum cost across every node with a token_usage payload. `nodes` is the
-    SQLAlchemy Node iterable; only `model_used` + `token_usage` are read so
-    this is safe to call after a normal `select(Node)` fetch."""
+def cost_events_total_cents(events: list[dict] | None) -> int:
+    """Sum the `cost_cents` field across project-level cost events (currently
+    only React-export, which doesn't persist a Node).
+
+    Pure function — no DB access — so callers can decide where the event list
+    comes from (typically `project.settings.get("cost_events")`). Malformed
+    entries (non-dict, missing/non-numeric `cost_cents`) are silently skipped
+    so a single bad row never poisons the rollup."""
+    if not events:
+        return 0
+    total = 0
+    for ev in events:
+        if not isinstance(ev, dict):
+            continue
+        raw = ev.get("cost_cents")
+        if isinstance(raw, bool):
+            # bool is an int subclass in Python — guard explicitly.
+            continue
+        if not isinstance(raw, (int, float)):
+            continue
+        total += int(raw)
+    return total
+
+
+def project_total_cost_cents(nodes: list, project=None) -> int:
+    """Sum cost across every node with a token_usage payload, plus any
+    project-level `cost_events` (e.g. React export, which doesn't persist a
+    Node). `nodes` is the SQLAlchemy Node iterable; only `model_used` +
+    `token_usage` are read so this is safe to call after a normal
+    `select(Node)` fetch.
+
+    `project` is optional for backwards compat — when omitted, the rollup is
+    node-only (matches the pre-cost_events behavior). When passed, its
+    `settings["cost_events"]` list is folded in via `cost_events_total_cents`.
+    """
     total = 0
     for n in nodes:
         total += cost_cents_for_usage(getattr(n, "token_usage", None), getattr(n, "model_used", None))
+    if project is not None:
+        proj_settings = getattr(project, "settings", None) or {}
+        events = proj_settings.get("cost_events") if isinstance(proj_settings, dict) else None
+        total += cost_events_total_cents(events)
     return total

@@ -177,8 +177,11 @@ async def _project_cost_status(
     nodes = (
         (await session.execute(select(Node).where(Node.project_id == project_id))).scalars().all()
     )
-    total = project_total_cost_cents(nodes)
     project = await session.get(Project, project_id)
+    # Pass the project so prior React-export spend (stored under
+    # `settings.cost_events` because that route doesn't persist a Node) gets
+    # folded into the cap check.
+    total = project_total_cost_cents(nodes, project=project)
     raw_cap = (project.settings or {}).get("cost_cap_cents") if project else None
     cap = int(raw_cap) if isinstance(raw_cap, (int, float)) and raw_cap > 0 else None
     return total, cap
