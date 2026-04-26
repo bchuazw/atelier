@@ -16,25 +16,6 @@ from atelier_api.storage import storage
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
-class CreateProjectIn(BaseModel):
-    name: str
-    seed_url: str | None = None
-    seed_html: str | None = None  # paste-HTML alternative to seed_url
-
-
-class ProjectOut(BaseModel):
-    id: str
-    name: str
-    seed_url: str | None
-    working_node_id: str | None
-    created_at: str
-    # Lightweight metadata for the recent-projects list — populated only by
-    # `list_projects` (the per-project `tree` endpoint already returns the
-    # full node graph so it doesn't need them).
-    node_count: int = 0
-    last_activity: str | None = None  # ISO string; defaults to created_at
-
-
 StylePinKind = Literal["color", "dimension", "enum", "font", "text"]
 
 
@@ -60,6 +41,30 @@ class StylePin(BaseModel):
     strict: bool = False
 
 
+class CreateProjectIn(BaseModel):
+    name: str
+    seed_url: str | None = None
+    seed_html: str | None = None  # paste-HTML alternative to seed_url
+    # Optional Brand Kit pins pre-loaded from the New Project dialog. Stored
+    # in project.settings["style_pins"] using the same shape patch_project
+    # writes, so the rest of the pipeline (fork prompt builder, ContextPanel,
+    # validator) sees no schema difference between project-create and patch.
+    style_pins: list[StylePin] | None = None
+
+
+class ProjectOut(BaseModel):
+    id: str
+    name: str
+    seed_url: str | None
+    working_node_id: str | None
+    created_at: str
+    # Lightweight metadata for the recent-projects list — populated only by
+    # `list_projects` (the per-project `tree` endpoint already returns the
+    # full node graph so it doesn't need them).
+    node_count: int = 0
+    last_activity: str | None = None  # ISO string; defaults to created_at
+
+
 class ProjectPatchIn(BaseModel):
     # Any field provided is updated; omitted fields are left alone.
     context: str | None = None
@@ -77,6 +82,25 @@ async def create_project(body: CreateProjectIn, session: AsyncSession = Depends(
             detail="Provide either seed_url OR seed_html, not both.",
         )
     project = Project(name=body.name, seed_url=body.seed_url)
+    # Pre-load Brand Kit pins from the New Project dialog into
+    # project.settings["style_pins"], using the same shape + validation
+    # patch_project writes (filter blanks, cap at 12, preserve kind+strict).
+    # JSON schema is unchanged: this is the same key the ContextPanel reads
+    # and the fork prompt builder injects — the dialog now just primes it on
+    # create so users don't have to re-type their brand on every fork.
+    if body.style_pins:
+        cleaned_pins = [
+            {
+                "prop": p.prop.strip(),
+                "value": p.value.strip(),
+                "kind": p.kind,
+                "strict": p.strict,
+            }
+            for p in body.style_pins
+            if p.prop.strip() and p.value.strip()
+        ][:12]
+        if cleaned_pins:
+            project.settings = {**(project.settings or {}), "style_pins": cleaned_pins}
     session.add(project)
     await session.flush()
 

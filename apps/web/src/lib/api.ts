@@ -219,7 +219,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   listProjects: () => request<ProjectDTO[]>("/projects"),
   createProject: (
-    body: { name: string; seed_url?: string; seed_html?: string } | string,
+    body:
+      | {
+          name: string;
+          seed_url?: string;
+          seed_html?: string;
+          // Optional Brand Kit pins, pre-loaded from the New Project dialog.
+          // When omitted (the existing fast path), no pins are saved.
+          style_pins?: StylePin[];
+        }
+      | string,
     seed_url?: string
   ) =>
     request<ProjectDTO>("/projects", {

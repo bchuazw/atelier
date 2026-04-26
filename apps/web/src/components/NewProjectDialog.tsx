@@ -1,10 +1,54 @@
 import { useEffect, useState } from "react";
-import { X, Loader2, Globe, Code, LayoutTemplate } from "lucide-react";
+import { X, Loader2, Globe, Code, LayoutTemplate, Pin, ChevronDown, ChevronRight } from "lucide-react";
 import clsx from "clsx";
-import { api, type TemplateManifestEntry } from "@/lib/api";
+import { api, type StylePin, type TemplateManifestEntry } from "@/lib/api";
 import { useUI } from "@/lib/store";
 
 type SeedMode = "url" | "html" | "template";
+
+// Same font list ContextPanel offers in its `kind: "font"` datalist — kept in
+// sync visually so the New Project dialog and the Style Pins editor feel like
+// the same vocabulary.
+const FONT_SUGGESTIONS = [
+  "Inter",
+  "Söhne",
+  "Helvetica",
+  "Helvetica Neue",
+  "Georgia",
+  "Playfair Display",
+  "IBM Plex Sans",
+  "Geist",
+  "system-ui",
+];
+
+const HEADING_WEIGHTS = ["", "400", "500", "600", "700", "800", "900"];
+
+// Builds the StylePin[] payload from the Brand Kit form fields. Empty fields
+// are skipped entirely so we never send blank pins. Each pin uses
+// `strict: false` — users can promote individual pins to strict from the
+// Context Panel after the project is created.
+function buildBrandKitPins(fields: {
+  primaryColor: string;
+  accentColor: string;
+  bodyFont: string;
+  headingWeight: string;
+  tone: string;
+  bannedWords: string;
+}): StylePin[] {
+  const pins: StylePin[] = [];
+  const push = (prop: string, value: string, kind: StylePin["kind"]) => {
+    const v = value.trim();
+    if (!v) return;
+    pins.push({ prop, value: v, kind, strict: false });
+  };
+  push("primary color", fields.primaryColor, "color");
+  push("accent color", fields.accentColor, "color");
+  push("body font-family", fields.bodyFont, "font");
+  push("h1 font-weight", fields.headingWeight, "enum");
+  push("tone of voice", fields.tone, "text");
+  push("banned words", fields.bannedWords, "text");
+  return pins;
+}
 
 export default function NewProjectDialog({
   open,
@@ -23,6 +67,18 @@ export default function NewProjectDialog({
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Brand Kit (optional) — collapsed by default so the existing fast path
+  // (name + template/url/html → Create) is unchanged. When ANY brand field
+  // has a value we build a StylePin[] and pass it to createProject; otherwise
+  // we omit style_pins entirely so the backend behaves as before.
+  const [brandOpen, setBrandOpen] = useState(false);
+  const [primaryColor, setPrimaryColor] = useState("");
+  const [accentColor, setAccentColor] = useState("");
+  const [bodyFont, setBodyFont] = useState("");
+  const [headingWeight, setHeadingWeight] = useState("");
+  const [tone, setTone] = useState("");
+  const [bannedWords, setBannedWords] = useState("");
+
   useEffect(() => {
     if (open) {
       setName("");
@@ -32,6 +88,13 @@ export default function NewProjectDialog({
       setSelectedTemplateId(null);
       setError(null);
       setRunning(false);
+      setBrandOpen(false);
+      setPrimaryColor("");
+      setAccentColor("");
+      setBodyFont("");
+      setHeadingWeight("");
+      setTone("");
+      setBannedWords("");
     }
   }, [open]);
 
@@ -63,10 +126,23 @@ export default function NewProjectDialog({
       } else if (mode === "url" && url.trim()) {
         seedUrl = url.trim();
       }
+      // Build the optional Brand Kit pins from any non-empty fields. We
+      // create them with strict=false so users can flip individual pins to
+      // strict later from the Context Panel — matches Theo's ask: "pre-load
+      // Style Pins" without forcing his palette to be non-negotiable.
+      const pins = buildBrandKitPins({
+        primaryColor,
+        accentColor,
+        bodyFont,
+        headingWeight,
+        tone,
+        bannedWords,
+      });
       const created = await api.createProject({
         name: name.trim(),
         seed_url: seedUrl,
         seed_html: seedHtml,
+        ...(pins.length > 0 ? { style_pins: pins } : {}),
       });
       const tree = await api.getTree(created.id);
       // Always prefer the project metadata from createProject (it's the
@@ -238,6 +314,169 @@ export default function NewProjectDialog({
                   Paste a complete, self-contained HTML document. Use this for polished demo starts that dodge real-site fetch quirks.
                 </p>
               </>
+            )}
+          </div>
+
+          {/* Brand Kit (optional). Collapsed by default — fast path stays one
+              click away. Expanding reveals a tight 3-row grid of palette,
+              type, and voice fields. Filled fields become Style Pins on the
+              new project so the user's brand applies on the FIRST fork
+              instead of the third or fourth. */}
+          <div className="border border-zinc-200 rounded-lg bg-white">
+            <button
+              type="button"
+              onClick={() => setBrandOpen((v) => !v)}
+              disabled={running}
+              aria-expanded={brandOpen}
+              className="w-full flex items-center justify-between px-3 py-2 text-left text-xs text-zinc-700 hover:bg-zinc-50 rounded-lg"
+            >
+              <span className="flex items-center gap-1.5">
+                {brandOpen ? (
+                  <ChevronDown className="w-3.5 h-3.5 text-zinc-500" />
+                ) : (
+                  <ChevronRight className="w-3.5 h-3.5 text-zinc-500" />
+                )}
+                <Pin className="w-3.5 h-3.5 text-amber-600" />
+                <span className="font-medium">Brand Kit</span>
+                <span className="text-zinc-500">
+                  · optional — palette, fonts, voice
+                </span>
+              </span>
+              {!brandOpen && (
+                <span className="text-[11px] text-zinc-500">
+                  + Add a brand kit (palette, fonts, voice)
+                </span>
+              )}
+            </button>
+            {brandOpen && (
+              <div className="px-3 pb-3 pt-1 space-y-3 border-t border-zinc-100">
+                {/* Palette row */}
+                <div>
+                  <div className="text-[11px] uppercase tracking-wider text-zinc-500 mb-1.5">
+                    Palette
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="color"
+                        aria-label="Primary color"
+                        value={primaryColor || "#000000"}
+                        onChange={(e) => setPrimaryColor(e.target.value)}
+                        disabled={running}
+                        title="Primary color"
+                        className="h-7 w-8 border border-zinc-200 rounded bg-white cursor-pointer"
+                      />
+                      <input
+                        value={primaryColor}
+                        onChange={(e) => setPrimaryColor(e.target.value)}
+                        placeholder="Primary (#3b5d3a)"
+                        disabled={running}
+                        className="flex-1 min-w-0 bg-white border border-zinc-200 rounded px-2 py-1 text-[12px] font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="color"
+                        aria-label="Accent color"
+                        value={accentColor || "#000000"}
+                        onChange={(e) => setAccentColor(e.target.value)}
+                        disabled={running}
+                        title="Accent color"
+                        className="h-7 w-8 border border-zinc-200 rounded bg-white cursor-pointer"
+                      />
+                      <input
+                        value={accentColor}
+                        onChange={(e) => setAccentColor(e.target.value)}
+                        placeholder="Accent (#c87050)"
+                        disabled={running}
+                        className="flex-1 min-w-0 bg-white border border-zinc-200 rounded px-2 py-1 text-[12px] font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Type row */}
+                <div>
+                  <div className="text-[11px] uppercase tracking-wider text-zinc-500 mb-1.5">
+                    Type
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      list="brand-kit-fonts"
+                      value={bodyFont}
+                      onChange={(e) => setBodyFont(e.target.value)}
+                      placeholder="Body font (Inter, Söhne…)"
+                      disabled={running}
+                      className="bg-white border border-zinc-200 rounded px-2 py-1 text-[12px] font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                    />
+                    <datalist id="brand-kit-fonts">
+                      {FONT_SUGGESTIONS.map((f) => (
+                        <option key={f} value={f} />
+                      ))}
+                    </datalist>
+                    <select
+                      value={headingWeight}
+                      onChange={(e) => setHeadingWeight(e.target.value)}
+                      disabled={running}
+                      aria-label="Heading weight"
+                      className="bg-white border border-zinc-200 rounded px-2 py-1 text-[12px] font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                    >
+                      {HEADING_WEIGHTS.map((w) => (
+                        <option key={w || "blank"} value={w}>
+                          {w ? `H1 weight ${w}` : "H1 weight (any)"}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Voice row */}
+                <div>
+                  <div className="text-[11px] uppercase tracking-wider text-zinc-500 mb-1.5">
+                    Voice
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      value={tone}
+                      onChange={(e) => setTone(e.target.value)}
+                      placeholder="confident, human, no jargon"
+                      disabled={running}
+                      className="bg-white border border-zinc-200 rounded px-2 py-1 text-[12px] focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                    />
+                    <input
+                      value={bannedWords}
+                      onChange={(e) => setBannedWords(e.target.value)}
+                      placeholder="banned words (synergy, leverage)"
+                      disabled={running}
+                      className="bg-white border border-zinc-200 rounded px-2 py-1 text-[12px] focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                    />
+                  </div>
+                </div>
+
+                {(() => {
+                  // Recompute the pin count from the live fields so the hint
+                  // matches what we'd actually send to the backend on submit.
+                  const pinCount = buildBrandKitPins({
+                    primaryColor,
+                    accentColor,
+                    bodyFont,
+                    headingWeight,
+                    tone,
+                    bannedWords,
+                  }).length;
+                  return pinCount > 0 ? (
+                    <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 flex items-center gap-1.5">
+                      <Pin className="w-3 h-3" />
+                      {pinCount} Style Pin{pinCount === 1 ? "" : "s"} will be saved with the project
+                      <span className="text-zinc-500">· soft by default — flip to strict in Context Panel</span>
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-zinc-500">
+                      Fill any field to pre-load Style Pins. Skip entirely for a blank canvas.
+                    </div>
+                  );
+                })()}
+              </div>
             )}
           </div>
 
