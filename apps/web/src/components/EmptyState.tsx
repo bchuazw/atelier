@@ -1,4 +1,4 @@
-import { Palette, MousePointerClick, Trash2, MoreHorizontal } from "lucide-react";
+import { Palette, MousePointerClick, Trash2, Archive, ArchiveRestore } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, type ProjectDTO } from "@/lib/api";
 import { useUI } from "@/lib/store";
@@ -20,11 +20,16 @@ export default function EmptyState({ onNewProject }: { onNewProject: () => void 
   const [projects, setProjects] = useState<ProjectDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // When false (default), the fetch omits the include_archived param so the
+  // dashboard is clean for screen-share. Toggling on triggers a refetch that
+  // returns archived rows alongside active ones, then the UI splits them
+  // into two sections.
+  const [showArchived, setShowArchived] = useState(false);
 
-  async function reload() {
+  async function reload(includeArchived = showArchived) {
     setLoading(true);
     try {
-      const list = await api.listProjects();
+      const list = await api.listProjects(includeArchived);
       setProjects(list);
     } catch {
       setProjects([]);
@@ -34,7 +39,9 @@ export default function EmptyState({ onNewProject }: { onNewProject: () => void 
   }
 
   useEffect(() => {
-    void reload();
+    void reload(false);
+    // Intentionally only on mount; the toggle handler refetches explicitly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function open(p: ProjectDTO) {
@@ -43,7 +50,12 @@ export default function EmptyState({ onNewProject }: { onNewProject: () => void 
   }
 
   async function deleteFromList(p: ProjectDTO) {
-    if (!confirm(`Delete project "${p.name}"? This removes all variants and assets.`)) return;
+    if (
+      !confirm(
+        `Delete project "${p.name}" permanently? This removes all variants and assets and cannot be undone.\n\n(Tip: "Archive" hides it from your dashboard but keeps the data.)`
+      )
+    )
+      return;
     setBusyId(p.id);
     try {
       await api.deleteProject(p.id);
@@ -54,6 +66,48 @@ export default function EmptyState({ onNewProject }: { onNewProject: () => void 
       setBusyId(null);
     }
   }
+
+  async function setArchived(p: ProjectDTO, archived: boolean) {
+    setBusyId(p.id);
+    try {
+      await api.archiveProject(p.id, archived);
+      if (archived) {
+        // Archiving from the active list: drop it (unless we're already
+        // showing archived rows, in which case flip its flag in place so it
+        // moves to the Archived section).
+        if (showArchived) {
+          setProjects((prev) =>
+            prev.map((q) => (q.id === p.id ? { ...q, archived: true } : q))
+          );
+        } else {
+          setProjects((prev) => prev.filter((q) => q.id !== p.id));
+        }
+      } else {
+        // Restoring: flip flag in place so it moves up to the active list.
+        setProjects((prev) =>
+          prev.map((q) => (q.id === p.id ? { ...q, archived: false } : q))
+        );
+      }
+    } catch (e) {
+      useUI.getState().showError(`Failed to update: ${(e as Error).message}`);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function toggleShowArchived() {
+    const next = !showArchived;
+    setShowArchived(next);
+    await reload(next);
+  }
+
+  const activeProjects = projects.filter((p) => !p.archived);
+  const archivedProjects = projects.filter((p) => p.archived);
+  // We only know there *might* be archived projects when we've fetched them
+  // at least once. Without that, hide the toggle so first-time users don't
+  // see a control that does nothing. Once toggled on, keep showing it (with
+  // count) so they can collapse back.
+  const showToggleRow = showArchived || archivedProjects.length > 0;
 
   return (
     <div className="w-full h-full flex items-center justify-center bg-stone-50 text-zinc-700">
@@ -82,20 +136,87 @@ export default function EmptyState({ onNewProject }: { onNewProject: () => void 
           </button>
         </div>
 
-        {!loading && projects.length > 0 && (
+        {!loading && activeProjects.length > 0 && (
           <nav aria-label="Recent projects">
-            <h2 className="text-xs uppercase tracking-wide text-zinc-600 mb-2">Recent projects</h2>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-xs uppercase tracking-wide text-zinc-600">Recent projects</h2>
+              {showToggleRow && (
+                <button
+                  onClick={toggleShowArchived}
+                  className="text-[11px] text-zinc-600 hover:text-zinc-900 underline-offset-2 hover:underline"
+                  aria-pressed={showArchived}
+                >
+                  {showArchived
+                    ? "Hide archived"
+                    : `Show ${archivedProjects.length} archived`}
+                </button>
+              )}
+            </div>
             <div className="space-y-1">
-              {projects.map((p) => (
+              {activeProjects.map((p) => (
                 <ProjectRow
                   key={p.id}
                   project={p}
                   busy={busyId === p.id}
                   onOpen={() => open(p)}
+                  onArchive={() => setArchived(p, true)}
                   onDelete={() => deleteFromList(p)}
                 />
               ))}
             </div>
+
+            {showArchived && archivedProjects.length > 0 && (
+              <div className="mt-6">
+                <h3 className="text-xs uppercase tracking-wide text-zinc-500 mb-2">
+                  Archived
+                </h3>
+                <div className="space-y-1 opacity-80">
+                  {archivedProjects.map((p) => (
+                    <ArchivedProjectRow
+                      key={p.id}
+                      project={p}
+                      busy={busyId === p.id}
+                      onOpen={() => open(p)}
+                      onRestore={() => setArchived(p, false)}
+                      onDelete={() => deleteFromList(p)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </nav>
+        )}
+
+        {/* Edge case: every project is archived → nothing in the active list,
+            but we still want the user to be able to expand and restore. */}
+        {!loading && activeProjects.length === 0 && showToggleRow && (
+          <nav aria-label="Recent projects">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-xs uppercase tracking-wide text-zinc-600">Recent projects</h2>
+              <button
+                onClick={toggleShowArchived}
+                className="text-[11px] text-zinc-600 hover:text-zinc-900 underline-offset-2 hover:underline"
+                aria-pressed={showArchived}
+              >
+                {showArchived
+                  ? "Hide archived"
+                  : `Show ${archivedProjects.length} archived`}
+              </button>
+            </div>
+            {showArchived && archivedProjects.length > 0 && (
+              <div className="space-y-1 opacity-80">
+                {archivedProjects.map((p) => (
+                  <ArchivedProjectRow
+                    key={p.id}
+                    project={p}
+                    busy={busyId === p.id}
+                    onOpen={() => open(p)}
+                    onRestore={() => setArchived(p, false)}
+                    onDelete={() => deleteFromList(p)}
+                  />
+                ))}
+              </div>
+            )}
           </nav>
         )}
       </div>
@@ -107,11 +228,13 @@ function ProjectRow({
   project: p,
   busy,
   onOpen,
+  onArchive,
   onDelete,
 }: {
   project: ProjectDTO;
   busy: boolean;
   onOpen: () => void;
+  onArchive: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -138,14 +261,92 @@ function ProjectRow({
         <div className="text-[11px] text-zinc-600">
           {formatRelative(p.last_activity || p.created_at || null)}
         </div>
+        {/* Archive is the default action; delete is demoted to a secondary
+            icon that only appears on hover next to it. Both stay hover-only
+            so the resting state of the row is clean. */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onArchive();
+          }}
+          className="text-zinc-500 hover:text-amber-600 opacity-0 group-hover:opacity-100 transition"
+          title="Archive project (hide from dashboard, keep data)"
+          aria-label="Archive project"
+        >
+          <Archive className="w-3.5 h-3.5" />
+        </button>
         <button
           onClick={(e) => {
             e.stopPropagation();
             onDelete();
           }}
-          className="text-zinc-500 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition"
-          title="Delete project"
-          aria-label="Delete project"
+          className="text-zinc-400 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition"
+          title="Delete project permanently"
+          aria-label="Delete project permanently"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ArchivedProjectRow({
+  project: p,
+  busy,
+  onOpen,
+  onRestore,
+  onDelete,
+}: {
+  project: ProjectDTO;
+  busy: boolean;
+  onOpen: () => void;
+  onRestore: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div
+      className={
+        "group w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-stone-100 border border-zinc-200 hover:border-zinc-400 transition" +
+        (busy ? " opacity-50 pointer-events-none" : "")
+      }
+    >
+      <button onClick={onOpen} className="flex-1 text-left min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="text-sm text-zinc-700 font-medium truncate">{p.name}</div>
+          {typeof p.node_count === "number" && p.node_count > 0 && (
+            <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-600 font-medium">
+              {p.node_count} {p.node_count === 1 ? "node" : "nodes"}
+            </span>
+          )}
+        </div>
+        {p.seed_url && (
+          <div className="text-[11px] text-zinc-600 font-mono truncate">{p.seed_url}</div>
+        )}
+      </button>
+      <div className="flex items-center gap-3 flex-shrink-0">
+        <div className="text-[11px] text-zinc-500">
+          {formatRelative(p.last_activity || p.created_at || null)}
+        </div>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onRestore();
+          }}
+          className="text-zinc-500 hover:text-emerald-600 opacity-0 group-hover:opacity-100 transition"
+          title="Restore project (show in dashboard)"
+          aria-label="Restore project"
+        >
+          <ArchiveRestore className="w-3.5 h-3.5" />
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          className="text-zinc-400 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition"
+          title="Delete project permanently"
+          aria-label="Delete project permanently"
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>

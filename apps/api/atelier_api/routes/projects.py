@@ -64,6 +64,11 @@ class ProjectOut(BaseModel):
     # full node graph so it doesn't need them).
     node_count: int = 0
     last_activity: str | None = None  # ISO string; defaults to created_at
+    # Soft-archive flag, persisted in `project.settings["archived"]`. Default
+    # false (legacy projects without the key parse as not-archived). The
+    # default `list_projects` response hides archived rows; pass
+    # `?include_archived=true` to see them.
+    archived: bool = False
 
 
 class ProjectPatchIn(BaseModel):
@@ -78,6 +83,11 @@ class ProjectPatchIn(BaseModel):
     # an SSE `cost-capped` event). 0 disables the cap (treated as "unset"),
     # negative is rejected. Persisted in `project.settings["cost_cap_cents"]`.
     cost_cap_cents: int | None = None
+    # Soft-archive toggle. When true the project is hidden from the default
+    # recent-projects list; when false it's restored. Persisted in
+    # `project.settings["archived"]`. Legacy projects with no key behave as
+    # archived=false.
+    archived: bool | None = None
 
 
 @router.post("", response_model=ProjectOut)
@@ -157,7 +167,10 @@ async def create_project(body: CreateProjectIn, session: AsyncSession = Depends(
 
 
 @router.get("", response_model=list[ProjectOut])
-async def list_projects(session: AsyncSession = Depends(get_session)):
+async def list_projects(
+    include_archived: bool = False,
+    session: AsyncSession = Depends(get_session),
+):
     from sqlalchemy import func as sql_func
 
     rows = (await session.execute(select(Project).order_by(Project.created_at.desc()))).scalars().all()
@@ -180,6 +193,11 @@ async def list_projects(session: AsyncSession = Depends(get_session)):
     out: list[ProjectOut] = []
     for p in rows:
         node_count, last_activity = meta_by_id.get(p.id, (0, None))
+        # Legacy projects without the `archived` settings key default to
+        # not-archived — they keep showing up exactly as before.
+        archived = bool((p.settings or {}).get("archived", False))
+        if archived and not include_archived:
+            continue
         out.append(
             ProjectOut(
                 id=p.id,
@@ -189,6 +207,7 @@ async def list_projects(session: AsyncSession = Depends(get_session)):
                 created_at=p.created_at,
                 node_count=node_count,
                 last_activity=last_activity or p.created_at,
+                archived=archived,
             )
         )
     return out
@@ -377,6 +396,14 @@ async def patch_project(
             current.pop("cost_cap_cents", None)
         else:
             current["cost_cap_cents"] = int(body.cost_cap_cents)
+    if body.archived is not None:
+        # Soft-archive flag. Stored under `archived` so the list endpoint can
+        # filter without a schema migration. False removes the key (so the
+        # JSON stays clean and legacy/restored projects look identical).
+        if body.archived:
+            current["archived"] = True
+        else:
+            current.pop("archived", None)
     project.settings = current
     if body.name is not None:
         new_name = body.name.strip()
@@ -391,6 +418,7 @@ async def patch_project(
         "style_pins": current.get("style_pins", []),
         "active_checkpoint_id": current.get("active_checkpoint_id"),
         "cost_cap_cents": current.get("cost_cap_cents"),
+        "archived": bool(current.get("archived", False)),
     }
 
 

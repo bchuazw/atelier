@@ -86,6 +86,10 @@ export type ProjectDTO = {
   // (0 for projects with only a seed); `cost_cap_cents` is null when unset.
   total_cost_cents?: number;
   cost_cap_cents?: number | null;
+  // Soft-archive flag. Server returns `false` for legacy projects with no
+  // `archived` key in settings. The default `listProjects()` call hides
+  // archived rows; pass `includeArchived=true` to fetch them too.
+  archived?: boolean;
 };
 
 export type TreeDTO = {
@@ -224,7 +228,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  listProjects: () => request<ProjectDTO[]>("/projects"),
+  listProjects: (includeArchived = false) =>
+    request<ProjectDTO[]>(
+      `/projects${includeArchived ? "?include_archived=true" : ""}`
+    ),
   createProject: (
     body:
       | {
@@ -260,6 +267,9 @@ export const api = {
       style_pins?: StylePin[];
       // USD cents. 0 (or omitted) clears the cap; positive sets it.
       cost_cap_cents?: number | null;
+      // Soft-archive toggle. true hides from default recent list; false
+      // restores. Persisted in project.settings["archived"].
+      archived?: boolean;
     }
   ) =>
     request<{
@@ -269,10 +279,13 @@ export const api = {
       style_pins?: StylePin[];
       active_checkpoint_id: string | null;
       cost_cap_cents?: number | null;
+      archived?: boolean;
     }>(
       `/projects/${projectId}`,
       { method: "PATCH", body: JSON.stringify(body) }
     ),
+  archiveProject: (projectId: string, archived: boolean) =>
+    api.patchProject(projectId, { archived }),
   fork: (
     parentId: string,
     prompt: string,
