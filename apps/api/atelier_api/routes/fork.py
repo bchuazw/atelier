@@ -101,6 +101,64 @@ def _parse_llm_output(text: str) -> tuple[str, dict]:
     return html, meta
 
 
+def _build_pins_block(style_pins: list[dict] | None) -> str:
+    """Render style pins into a prompt fragment. Strict pins escalate to
+    "ABSOLUTE / NON-NEGOTIABLE" language and are listed in their own section
+    above the soft pins so the model can't gloss over them."""
+    if not style_pins:
+        return ""
+    strict_lines: list[str] = []
+    soft_lines: list[str] = []
+    for p in style_pins:
+        if not (p.get("prop") and p.get("value")):
+            continue
+        line = f"- {p['prop']}: {p['value']}"
+        if p.get("strict"):
+            strict_lines.append(line)
+        else:
+            soft_lines.append(line)
+    blocks: list[str] = []
+    if strict_lines:
+        blocks.append(
+            "STRICT STYLE PINS — ABSOLUTE, NON-NEGOTIABLE. The output MUST contain these "
+            "EXACT values verbatim. They override the user's instruction if they conflict. "
+            "Do NOT round, approximate, rename, or substitute. If a pin is `primary color: "
+            "#3b5d3a`, that exact hex MUST appear in the rendered CSS:\n"
+            + "\n".join(strict_lines)
+        )
+    if soft_lines:
+        blocks.append(
+            "STYLE PINS — hard constraints. Every variant MUST honor these exact values, "
+            "no matter what the instruction asks for. If they conflict with the "
+            "instruction, the pins win:\n"
+            + "\n".join(soft_lines)
+        )
+    return "\n\n".join(blocks) + "\n\n"
+
+
+def _strict_color_pins_violated(html: str, style_pins: list[dict] | None) -> list[dict]:
+    """Return the subset of strict color pins whose value is missing from the
+    HTML. Only `kind == "color"` + `strict == True` pins are checked: those are
+    the ones with a substring match that's reliable enough to be worth a
+    re-prompt round. Other kinds (dimension/enum/font/text) are too noisy to
+    validate this way and are left to the prompt's MUST language."""
+    if not style_pins:
+        return []
+    violations: list[dict] = []
+    lowered = html.lower()
+    for p in style_pins:
+        if p.get("kind") != "color" or not p.get("strict"):
+            continue
+        val = (p.get("value") or "").strip().lower()
+        if not val:
+            continue
+        # Tolerate an absent leading '#' on the pin's stored value.
+        candidates = {val, val if val.startswith("#") else f"#{val}"}
+        if not any(c in lowered for c in candidates):
+            violations.append(p)
+    return violations
+
+
 async def _generate_one(
     parent_html: str,
     prompt: str,
@@ -113,27 +171,46 @@ async def _generate_one(
         if context and context.strip()
         else ""
     )
-    pins_block = ""
-    if style_pins:
-        pin_lines = [
-            f"- {p['prop']}: {p['value']}"
-            for p in style_pins
-            if p.get("prop") and p.get("value")
-        ]
-        if pin_lines:
-            pins_block = (
-                "STYLE PINS — these are HARD constraints. Every variant MUST honor these "
-                "exact values, no matter what the instruction asks for. If they conflict "
-                "with the instruction, the pins win:\n"
-                + "\n".join(pin_lines)
-                + "\n\n"
-            )
+    pins_block = _build_pins_block(style_pins)
     user_msg = (
         f"{context_block}{pins_block}INSTRUCTION:\n{prompt}\n\nPARENT_HTML (truncated if long):\n```html\n{parent_html[:60000]}\n```\n\n"
         "Now produce the modified HTML document followed by ---META--- and the JSON meta."
     )
     resp = await llm.call(system=FORK_SYSTEM, user=user_msg, model=model_choice, max_tokens=8192)
     html, meta = _parse_llm_output(resp.text)
+
+    # One-shot strict-pin validation. If a strict color pin's hex didn't make
+    # it into the generated HTML, re-prompt once with an explicit correction
+    # message. We deliberately cap this at a single retry: the goal is to
+    # catch the "Sonnet ignored my brand color" case, not loop forever.
+    violations = _strict_color_pins_violated(html, style_pins)
+    if violations:
+        violation_lines = "\n".join(
+            f"- {p['prop']}: {p['value']} (this exact hex was missing from your output)"
+            for p in violations
+        )
+        retry_msg = (
+            f"{context_block}{pins_block}INSTRUCTION:\n{prompt}\n\n"
+            "YOUR PREVIOUS ATTEMPT VIOLATED THESE STRICT PINS:\n"
+            f"{violation_lines}\n\n"
+            "Re-output the HTML document, this time using the EXACT hex values above "
+            "wherever the corresponding design property appears. Do not approximate or "
+            "substitute.\n\n"
+            f"PARENT_HTML (truncated if long):\n```html\n{parent_html[:60000]}\n```\n\n"
+            "Now produce the corrected HTML document followed by ---META--- and the JSON meta."
+        )
+        try:
+            resp_retry = await llm.call(
+                system=FORK_SYSTEM, user=retry_msg, model=model_choice, max_tokens=8192
+            )
+            html_retry, meta_retry = _parse_llm_output(resp_retry.text)
+            # Only adopt the retry if it actually fixes the violation; otherwise
+            # keep the original so the user at least sees a complete page.
+            if not _strict_color_pins_violated(html_retry, style_pins):
+                html, meta, resp = html_retry, meta_retry, resp_retry
+        except Exception:
+            log.exception("strict-pin re-prompt failed; keeping original generation")
+
     return html, meta, resp
 
 

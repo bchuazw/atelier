@@ -111,7 +111,7 @@ export default function ExportDialog() {
               </p>
             </div>
           </div>
-          <button onClick={closeExport} className="text-zinc-500 hover:text-zinc-900">
+          <button onClick={closeExport} className="text-zinc-500 hover:text-zinc-900" aria-label="Close">
             <X className="w-5 h-5" />
           </button>
         </div>

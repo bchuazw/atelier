@@ -107,7 +107,7 @@ export default function NewProjectDialog({
             <Globe className="w-5 h-5 text-amber-400" />
             <h2 className="text-base font-medium">New project</h2>
           </div>
-          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-900">
+          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-900" aria-label="Close">
             <X className="w-5 h-5" />
           </button>
         </div>

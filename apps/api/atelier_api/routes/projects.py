@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -33,16 +35,29 @@ class ProjectOut(BaseModel):
     last_activity: str | None = None  # ISO string; defaults to created_at
 
 
+StylePinKind = Literal["color", "dimension", "enum", "font", "text"]
+
+
 class StylePin(BaseModel):
     """A single structured design constraint the user wants every fork to
-    honor. Free-text but typed for clarity:
-      - prop:  the design property being pinned ("h1 weight", "primary color")
-      - value: the value to honor ("800", "#c87050", "1.25 ratio")
-    Stored in project.settings.style_pins; injected into every fork +
-    critic prompt as a short bullet list."""
+    honor. Stored in project.settings.style_pins; injected into every fork +
+    critic prompt as a short bullet list.
+
+      - prop:   the design property being pinned ("h1 weight", "primary color")
+      - value:  the value to honor ("800", "#c87050", "1.25 ratio")
+      - kind:   typed schema discriminator. Drives the input control in the UI
+                and (for `color`) enables a post-generation validation pass.
+                Absent on legacy pins -> treated as "text".
+      - strict: when true, the prompt language escalates from "honor" to
+                "MUST / ABSOLUTE", and a single re-prompt round triggers if
+                a checkable pin (currently: color hex) is missing from the
+                generated HTML. Defaults False so existing pins behave the
+                same as before."""
 
     prop: str
     value: str
+    kind: StylePinKind = "text"
+    strict: bool = False
 
 
 class ProjectPatchIn(BaseModel):
@@ -300,8 +315,16 @@ async def patch_project(
         current["active_checkpoint_id"] = body.active_checkpoint_id
     if body.style_pins is not None:
         # Filter empty/blank pins; cap at 12 to keep the prompt short.
+        # Persist `kind` + `strict` so the fork prompt builder + validator
+        # can pick them up. Legacy pins without `kind` keep working because
+        # StylePin defaults `kind="text"` on parse.
         cleaned = [
-            {"prop": p.prop.strip(), "value": p.value.strip()}
+            {
+                "prop": p.prop.strip(),
+                "value": p.value.strip(),
+                "kind": p.kind,
+                "strict": p.strict,
+            }
             for p in body.style_pins
             if p.prop.strip() and p.value.strip()
         ][:12]

@@ -227,7 +227,7 @@ export default function MediaDialog() {
               </p>
             </div>
           </div>
-          <button onClick={closeMedia} className="text-zinc-500 hover:text-zinc-900">
+          <button onClick={closeMedia} className="text-zinc-500 hover:text-zinc-900" aria-label="Close">
             <X className="w-5 h-5" />
           </button>
         </div>

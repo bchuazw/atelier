@@ -209,7 +209,7 @@ export default function CriticsDialog() {
               </p>
             </div>
           </div>
-          <button onClick={closeCritics} className="text-zinc-500 hover:text-zinc-900">
+          <button onClick={closeCritics} className="text-zinc-500 hover:text-zinc-900" aria-label="Close">
             <X className="w-5 h-5" />
           </button>
         </div>

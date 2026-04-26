@@ -45,7 +45,22 @@ export type EdgeDTO = {
   prompt_text: string | null;
 };
 
-export type StylePin = { prop: string; value: string };
+// Discriminator for the input control rendered in ContextPanel + how the
+// fork prompt frames each constraint. Legacy pins persisted before this
+// field existed parse as `kind: "text"` (server default), so older projects
+// keep working without migration.
+export type StylePinKind = "color" | "dimension" | "enum" | "font" | "text";
+export type StylePin = {
+  prop: string;
+  value: string;
+  // Optional on the wire so older saved pins (no `kind`) still validate;
+  // the server fills in `"text"` when missing.
+  kind?: StylePinKind;
+  // When true, the prompt escalates to "ABSOLUTE / NON-NEGOTIABLE" language
+  // and (for color pins) the server runs a one-shot validation re-prompt if
+  // the exact value didn't make it into the generated HTML.
+  strict?: boolean;
+};
 
 export type ProjectDTO = {
   id: string;

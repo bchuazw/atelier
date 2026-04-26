@@ -93,7 +93,7 @@ export default function ForkDialog() {
               </p>
             </div>
           </div>
-          <button onClick={closeFork} className="text-zinc-500 hover:text-zinc-900">
+          <button onClick={closeFork} className="text-zinc-500 hover:text-zinc-900" aria-label="Close">
             <X className="w-5 h-5" />
           </button>
         </div>

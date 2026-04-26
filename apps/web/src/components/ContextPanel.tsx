@@ -1,7 +1,40 @@
 import { useEffect, useState } from "react";
-import { X, BookOpen, Loader2, Save, Pin, Plus, Trash2 } from "lucide-react";
-import { api, type StylePin } from "@/lib/api";
+import { X, BookOpen, Loader2, Save, Pin, Plus, Trash2, Lock } from "lucide-react";
+import { api, type StylePin, type StylePinKind } from "@/lib/api";
 import { useUI } from "@/lib/store";
+
+// Pins persisted before the `kind` field existed have it absent; treat that
+// as "text" everywhere so the UI keeps rendering legacy pins as the
+// free-text rows they were saved as.
+const pinKind = (p: StylePin): StylePinKind => p.kind ?? "text";
+
+// Static option lists for `kind: "enum"`. Keyed by a substring match on the
+// pin's `prop` so `h1 font-weight` and `body font-weight` both resolve to
+// the same dropdown without per-pin config.
+const ENUM_OPTIONS: { match: RegExp; options: string[] }[] = [
+  { match: /font-weight|font weight/i, options: ["300", "400", "500", "600", "700", "800", "900"] },
+  { match: /text-transform/i, options: ["none", "uppercase", "lowercase", "capitalize"] },
+  { match: /text-align/i, options: ["left", "center", "right", "justify"] },
+];
+
+const enumOptionsFor = (prop: string): string[] => {
+  for (const { match, options } of ENUM_OPTIONS) if (match.test(prop)) return options;
+  return [];
+};
+
+// Common units for `kind: "dimension"`. We split the value into number+unit
+// at edit time but always store the joined string ("12px") so the prompt
+// builder doesn't need to know about the structured form.
+const DIMENSION_UNITS = ["px", "rem", "em", "%", ""] as const;
+const splitDimension = (raw: string): { num: string; unit: string } => {
+  const m = raw.trim().match(/^(-?\d*\.?\d*)\s*([a-z%]*)$/i);
+  if (!m) return { num: raw, unit: "" };
+  return { num: m[1] ?? "", unit: m[2] ?? "" };
+};
+
+// Loose hex validator — accepts #RGB, #RRGGBB, #RRGGBBAA. The native color
+// picker only emits #RRGGBB, but users may type shorthands or alpha hexes.
+const isHex = (v: string) => /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v.trim());
 
 const PLACEHOLDER = `e.g.,
 
@@ -20,22 +53,22 @@ const PIN_PRESETS: PresetGroup[] = [
   {
     heading: "Visual",
     pins: [
-      { label: "H1 weight", pin: { prop: "h1 font-weight", value: "800" } },
-      { label: "Primary color", pin: { prop: "primary color", value: "#c87050" } },
-      { label: "Accent color", pin: { prop: "accent color", value: "#1a1a1a" } },
-      { label: "Type scale", pin: { prop: "type scale ratio", value: "1.25" } },
-      { label: "Body font", pin: { prop: "body font-family", value: "Inter" } },
-      { label: "Radius", pin: { prop: "border-radius", value: "12px" } },
+      { label: "H1 weight", pin: { prop: "h1 font-weight", value: "800", kind: "enum" } },
+      { label: "Primary color", pin: { prop: "primary color", value: "#c87050", kind: "color" } },
+      { label: "Accent color", pin: { prop: "accent color", value: "#1a1a1a", kind: "color" } },
+      { label: "Type scale", pin: { prop: "type scale ratio", value: "1.25", kind: "dimension" } },
+      { label: "Body font", pin: { prop: "body font-family", value: "Inter", kind: "font" } },
+      { label: "Radius", pin: { prop: "border-radius", value: "12px", kind: "dimension" } },
     ],
   },
   {
     heading: "Voice & copy",
     pins: [
-      { label: "Tone", pin: { prop: "tone of voice", value: "confident, human, no jargon" } },
-      { label: "Audience", pin: { prop: "audience", value: "early-stage founders" } },
-      { label: "Reading level", pin: { prop: "reading level", value: "8th grade" } },
-      { label: "Banned words", pin: { prop: "banned words", value: "synergy, leverage, unlock" } },
-      { label: "CTA verb", pin: { prop: "primary CTA verb", value: "Start" } },
+      { label: "Tone", pin: { prop: "tone of voice", value: "confident, human, no jargon", kind: "text" } },
+      { label: "Audience", pin: { prop: "audience", value: "early-stage founders", kind: "text" } },
+      { label: "Reading level", pin: { prop: "reading level", value: "8th grade", kind: "text" } },
+      { label: "Banned words", pin: { prop: "banned words", value: "synergy, leverage, unlock", kind: "text" } },
+      { label: "CTA verb", pin: { prop: "primary CTA verb", value: "Start", kind: "text" } },
     ],
   },
 ];
@@ -79,7 +112,12 @@ export default function ContextPanel() {
     JSON.stringify(project?.style_pins ?? []) !== JSON.stringify(draftPins);
 
   function addPin(seed?: StylePin) {
-    setDraftPins((prev) => [...prev, seed ?? { prop: "", value: "" }]);
+    // New blank pins default to text+soft so they behave exactly like
+    // pre-typed-pins did. Presets pass their own seed with explicit kind.
+    setDraftPins((prev) => [
+      ...prev,
+      seed ?? { prop: "", value: "", kind: "text", strict: false },
+    ]);
     setSaved(false);
   }
 
@@ -107,7 +145,7 @@ export default function ContextPanel() {
               </p>
             </div>
           </div>
-          <button onClick={closeContextPanel} className="text-zinc-500 hover:text-zinc-900">
+          <button onClick={closeContextPanel} className="text-zinc-500 hover:text-zinc-900" aria-label="Close">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -122,7 +160,7 @@ export default function ContextPanel() {
                 <Pin className="w-3.5 h-3.5 text-amber-600" />
                 <span className="text-[12px] font-medium">Style pins</span>
                 <span className="text-[11px] text-zinc-600">
-                  · hard constraints every fork must honor
+                  · hard constraints every fork must honor — flip <Lock className="w-2.5 h-2.5 inline -mt-0.5" /> for non-negotiable
                 </span>
               </div>
               <button
@@ -134,33 +172,183 @@ export default function ContextPanel() {
               </button>
             </div>
             <div className="space-y-1">
-              {draftPins.map((p, i) => (
-                <div key={i} className="flex items-center gap-1.5">
-                  <input
-                    value={p.prop}
-                    onChange={(e) => updatePin(i, { prop: e.target.value })}
-                    placeholder="property (e.g. h1 font-weight)"
-                    className="flex-1 bg-white border border-zinc-200 rounded px-2 py-1 text-[12px] focus:outline-none focus:ring-2 focus:ring-amber-500/40"
-                    disabled={saving}
-                  />
-                  <span className="text-zinc-400 text-[12px]">=</span>
-                  <input
-                    value={p.value}
-                    onChange={(e) => updatePin(i, { value: e.target.value })}
-                    placeholder="value (e.g. 800 or #c87050)"
-                    className="flex-1 bg-white border border-zinc-200 rounded px-2 py-1 text-[12px] font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/40"
-                    disabled={saving}
-                  />
-                  <button
-                    onClick={() => removePin(i)}
-                    disabled={saving}
-                    title="Remove pin"
-                    className="text-zinc-400 hover:text-rose-500"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
+              {draftPins.map((p, i) => {
+                const kind = pinKind(p);
+                const enumOpts = kind === "enum" ? enumOptionsFor(p.prop) : [];
+                const dim = kind === "dimension" ? splitDimension(p.value) : null;
+                const colorBad = kind === "color" && p.value.trim() !== "" && !isHex(p.value);
+                return (
+                  <div key={i} className="flex items-center gap-1.5">
+                    <input
+                      value={p.prop}
+                      onChange={(e) => updatePin(i, { prop: e.target.value })}
+                      placeholder="property (e.g. h1 font-weight)"
+                      className="flex-1 bg-white border border-zinc-200 rounded px-2 py-1 text-[12px] focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                      disabled={saving}
+                    />
+                    <select
+                      value={kind}
+                      onChange={(e) =>
+                        updatePin(i, { kind: e.target.value as StylePinKind })
+                      }
+                      title="Pin type — controls validation + the input below"
+                      className="bg-white border border-zinc-200 rounded px-1 py-1 text-[11px] text-zinc-600 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                      disabled={saving}
+                    >
+                      <option value="text">text</option>
+                      <option value="color">color</option>
+                      <option value="dimension">dimension</option>
+                      <option value="enum">enum</option>
+                      <option value="font">font</option>
+                    </select>
+                    <span className="text-zinc-400 text-[12px]">=</span>
+
+                    {/* Typed input control. Each kind renders a control that
+                        nudges the user toward valid values; we still store
+                        a single string so legacy pin handling + the prompt
+                        builder don't change shape. */}
+                    {kind === "color" ? (
+                      <div className="flex items-center gap-1 flex-1">
+                        <input
+                          type="color"
+                          value={isHex(p.value) ? p.value : "#000000"}
+                          onChange={(e) => updatePin(i, { value: e.target.value })}
+                          disabled={saving}
+                          title="Pick color"
+                          className="h-7 w-8 border border-zinc-200 rounded bg-white cursor-pointer"
+                        />
+                        <input
+                          value={p.value}
+                          onChange={(e) => updatePin(i, { value: e.target.value })}
+                          placeholder="#c87050"
+                          className={
+                            "flex-1 bg-white border rounded px-2 py-1 text-[12px] font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/40 " +
+                            (colorBad ? "border-rose-300" : "border-zinc-200")
+                          }
+                          disabled={saving}
+                          title={colorBad ? "Expected #RGB, #RRGGBB, or #RRGGBBAA" : undefined}
+                        />
+                      </div>
+                    ) : kind === "dimension" ? (
+                      <div className="flex items-center gap-1 flex-1">
+                        <input
+                          value={dim?.num ?? ""}
+                          onChange={(e) =>
+                            updatePin(i, {
+                              value: `${e.target.value}${dim?.unit ?? ""}`,
+                            })
+                          }
+                          placeholder="12"
+                          inputMode="decimal"
+                          className="flex-1 min-w-0 bg-white border border-zinc-200 rounded px-2 py-1 text-[12px] font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                          disabled={saving}
+                        />
+                        <select
+                          value={dim?.unit ?? ""}
+                          onChange={(e) =>
+                            updatePin(i, {
+                              value: `${dim?.num ?? ""}${e.target.value}`,
+                            })
+                          }
+                          className="bg-white border border-zinc-200 rounded px-1 py-1 text-[11px] focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                          disabled={saving}
+                          title="Unit"
+                        >
+                          {DIMENSION_UNITS.map((u) => (
+                            <option key={u} value={u}>
+                              {u || "—"}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : kind === "enum" && enumOpts.length > 0 ? (
+                      <select
+                        value={p.value}
+                        onChange={(e) => updatePin(i, { value: e.target.value })}
+                        className="flex-1 bg-white border border-zinc-200 rounded px-2 py-1 text-[12px] font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                        disabled={saving}
+                      >
+                        {/* Allow custom value to round-trip even if it
+                            doesn't match a known option for this prop. */}
+                        {!enumOpts.includes(p.value) && p.value && (
+                          <option value={p.value}>{p.value}</option>
+                        )}
+                        {enumOpts.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                    ) : kind === "font" ? (
+                      <>
+                        <input
+                          list={`pin-fonts-${i}`}
+                          value={p.value}
+                          onChange={(e) => updatePin(i, { value: e.target.value })}
+                          placeholder="Inter, Söhne, Helvetica"
+                          className="flex-1 bg-white border border-zinc-200 rounded px-2 py-1 text-[12px] font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                          disabled={saving}
+                        />
+                        <datalist id={`pin-fonts-${i}`}>
+                          {[
+                            "Inter",
+                            "Söhne",
+                            "Helvetica",
+                            "Helvetica Neue",
+                            "Georgia",
+                            "Playfair Display",
+                            "IBM Plex Sans",
+                            "Geist",
+                            "system-ui",
+                          ].map((f) => (
+                            <option key={f} value={f} />
+                          ))}
+                        </datalist>
+                      </>
+                    ) : (
+                      <input
+                        value={p.value}
+                        onChange={(e) => updatePin(i, { value: e.target.value })}
+                        placeholder="value (e.g. 800 or confident, human)"
+                        className="flex-1 bg-white border border-zinc-200 rounded px-2 py-1 text-[12px] font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                        disabled={saving}
+                      />
+                    )}
+
+                    {/* Strict toggle — when on, the prompt escalates this
+                        pin to "ABSOLUTE / NON-NEGOTIABLE" and (for color
+                        pins) the server runs a single re-prompt round if
+                        the exact value is missing from the output. */}
+                    <button
+                      onClick={() => updatePin(i, { strict: !p.strict })}
+                      disabled={saving}
+                      title={
+                        p.strict
+                          ? "Strict: value MUST appear verbatim in the variant"
+                          : "Soft: model treats this as a strong preference"
+                      }
+                      className={
+                        "px-1.5 py-0.5 rounded text-[10px] flex items-center gap-1 border " +
+                        (p.strict
+                          ? "bg-amber-100 border-amber-500 text-amber-700"
+                          : "bg-white border-zinc-200 text-zinc-400 hover:text-zinc-700")
+                      }
+                    >
+                      <Lock className="w-3 h-3" />
+                      {p.strict ? "strict" : "soft"}
+                    </button>
+
+                    <button
+                      onClick={() => removePin(i)}
+                      disabled={saving}
+                      title="Remove pin"
+                      className="text-zinc-400 hover:text-rose-500"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
               {draftPins.length === 0 && (
                 <div className="text-[11px] text-zinc-500 italic px-2 py-1">
                   No pins. Add one to lock a design choice across all forks.

@@ -167,10 +167,16 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
                 onClick={() => refresh()}
                 className={clsx("p-1.5 rounded hover:bg-zinc-100", refreshing && "animate-spin")}
                 title="Refresh tree"
+                aria-label="Refresh tree"
               >
                 <RefreshCw className="w-4 h-4" />
               </button>
-              <button onClick={del} className="p-1.5 rounded hover:bg-zinc-100 text-rose-400" title="Delete project">
+              <button
+                onClick={del}
+                className="p-1.5 rounded hover:bg-zinc-100 text-rose-400"
+                title="Delete project"
+                aria-label="Delete project"
+              >
                 <Trash2 className="w-4 h-4" />
               </button>
             </>
