@@ -130,7 +130,23 @@ export default function PromptBar() {
       setRecentPrompts(loadRecentPrompts(project!.id));
       setPrompt("");
     } catch (e: any) {
-      setError(e?.message || "Fork failed");
+      const raw = String(e?.message || "Fork failed");
+      // Special-case the cost-cap 402 from the sync /fork path. Without
+      // this branch the user saw the raw `"402 Payment Required: {\"detail\":...}"`
+      // envelope inline — ugly + leaks server detail. Route to the same
+      // persistent banner the SSE path uses so the experience is consistent.
+      if (raw.includes("402") && raw.toLowerCase().includes("cost cap")) {
+        const proj = useUI.getState().project;
+        useUI.getState().showCostCapBanner({
+          total_cost_cents: proj?.total_cost_cents ?? 0,
+          cost_cap_cents: proj?.cost_cap_cents ?? 0,
+        });
+      } else {
+        // Strip the JSON envelope when present so users see the human
+        // detail and not the wire format.
+        const detailMatch = raw.match(/"detail"\s*:\s*"([^"]+)"/);
+        setError(detailMatch?.[1] ?? raw);
+      }
     } finally {
       setRunning(false);
     }

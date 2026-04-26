@@ -143,7 +143,7 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
             >
               ~${projectCostUsd.toFixed(2)}
               {projectCapCents ? (
-                <span className="opacity-70"> / ${(projectCapCents / 100).toFixed(0)}</span>
+                <span className="opacity-70"> / ${(projectCapCents / 100).toFixed(2)}</span>
               ) : null}
             </div>
           )}
