@@ -121,8 +121,14 @@ export default function CriticsDialog() {
       setSelected(pre);
       setStage("review");
     } catch (e: any) {
-      setError(e?.message || "Analyze failed");
+      const msg = e?.message || "Analyze failed";
+      setError(msg);
       setStage("compose");
+      // Beta tester reported the 404/422 from this endpoint surfaced silently
+      // — the inline error was hidden behind the dialog backdrop while they
+      // closed the dialog. Push to the global ErrorToast so the failure is
+      // visible after the dialog closes too.
+      useUI.getState().showError(`Critics: ${msg}`);
     }
   }
 

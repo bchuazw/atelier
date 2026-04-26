@@ -54,6 +54,23 @@ export default function ForkDialog() {
 
   async function submit() {
     if (!prompt.trim() || !forkParentId) return;
+    // Cost-fan guard. A FAANG-eng beta tester reported "fired a 3-variant
+    // generation against my will. Three Sonnet calls I didn't ask for."
+    // For any fan > 1 (n>1 or shootout=true) we surface a one-shot confirm
+    // so the cost intent is explicit. Single-variant forks keep the old
+    // zero-friction path.
+    const fanCount = shootout ? 3 : n;
+    if (fanCount > 1) {
+      // Rough per-call estimate using Sonnet rates; shootout averages the
+      // three tiers. Keeps the user honest about what they're spending.
+      const perCallUsd = shootout ? 0.06 : model === "opus" ? 0.18 : model === "haiku" ? 0.01 : 0.06;
+      const totalUsd = (perCallUsd * fanCount).toFixed(2);
+      const ok = window.confirm(
+        `This will fire ${fanCount} parallel LLM call${fanCount === 1 ? "" : "s"} ` +
+          `(~$${totalUsd}). Continue?`
+      );
+      if (!ok) return;
+    }
     setRunning(true);
     setError(null);
     try {

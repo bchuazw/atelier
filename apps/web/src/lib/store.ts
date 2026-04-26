@@ -150,16 +150,72 @@ export const useUI = create<UIState>((set) => ({
   setTree: (project, nodes, edges) => set({ project, nodes, edges }),
   setProject: (project) => set({ project }),
   setSelected: (id) => set({ selectedNodeId: id }),
-  openFork: (parentId) => set({ forkDialogOpen: true, forkParentId: parentId }),
+  // All open* actions close any other open dialog first. A beta tester
+  // chained Critics on top of an open Fork dialog and ended up with two
+  // overlapping modals + the second one auto-fired a 3-variant generation
+  // because both shared keyboard focus. The fix here is structural: only
+  // one dialog can be open at a time. Each open* call wipes every other
+  // dialog flag in the same `set` so React renders a single transition.
+  openFork: (parentId) =>
+    set({
+      forkDialogOpen: true,
+      forkParentId: parentId,
+      mediaDialogOpen: false,
+      feedbackDialogOpen: false,
+      criticsDialogOpen: false,
+      exportDialogOpen: false,
+      contextPanelOpen: false,
+      mergeDialog: null,
+    }),
   closeFork: () => set({ forkDialogOpen: false, forkParentId: null, forkPrefill: null }),
   setForkPrefill: (prompt) => set({ forkPrefill: prompt }),
-  openMedia: (parentId) => set({ mediaDialogOpen: true, mediaParentId: parentId }),
+  openMedia: (parentId) =>
+    set({
+      mediaDialogOpen: true,
+      mediaParentId: parentId,
+      forkDialogOpen: false,
+      feedbackDialogOpen: false,
+      criticsDialogOpen: false,
+      exportDialogOpen: false,
+      contextPanelOpen: false,
+      mergeDialog: null,
+    }),
   closeMedia: () => set({ mediaDialogOpen: false, mediaParentId: null }),
-  openFeedback: (targetId) => set({ feedbackDialogOpen: true, feedbackTargetId: targetId }),
+  openFeedback: (targetId) =>
+    set({
+      feedbackDialogOpen: true,
+      feedbackTargetId: targetId,
+      forkDialogOpen: false,
+      mediaDialogOpen: false,
+      criticsDialogOpen: false,
+      exportDialogOpen: false,
+      contextPanelOpen: false,
+      mergeDialog: null,
+    }),
   closeFeedback: () => set({ feedbackDialogOpen: false, feedbackTargetId: null }),
-  openCritics: (targetId) => set({ criticsDialogOpen: true, criticsTargetId: targetId }),
+  openCritics: (targetId) =>
+    set({
+      criticsDialogOpen: true,
+      criticsTargetId: targetId,
+      forkDialogOpen: false,
+      mediaDialogOpen: false,
+      feedbackDialogOpen: false,
+      exportDialogOpen: false,
+      contextPanelOpen: false,
+      mergeDialog: null,
+    }),
   closeCritics: () => set({ criticsDialogOpen: false, criticsTargetId: null }),
-  openExport: (nodeId) => set({ exportDialogOpen: true, exportNodeId: nodeId }),
+  openExport: (nodeId) =>
+    set({
+      exportDialogOpen: true,
+      exportNodeId: nodeId,
+      forkDialogOpen: false,
+      mediaDialogOpen: false,
+      feedbackDialogOpen: false,
+      criticsDialogOpen: false,
+      contextPanelOpen: false,
+      mergeDialog: null,
+    }),
   closeExport: () => set({ exportDialogOpen: false, exportNodeId: null }),
   setPreferredModel: (m) => set({ preferredModel: m }),
   beginMergeDrag: (source_id, original_x, original_y) =>
@@ -175,7 +231,16 @@ export const useUI = create<UIState>((set) => ({
   setCompareB: (id) => set((s) => ({ compare: { ...s.compare, b: id } })),
   openViewer: () => set({ viewerOpen: true }),
   closeViewer: () => set({ viewerOpen: false }),
-  openContextPanel: () => set({ contextPanelOpen: true }),
+  openContextPanel: () =>
+    set({
+      contextPanelOpen: true,
+      forkDialogOpen: false,
+      mediaDialogOpen: false,
+      feedbackDialogOpen: false,
+      criticsDialogOpen: false,
+      exportDialogOpen: false,
+      mergeDialog: null,
+    }),
   closeContextPanel: () => set({ contextPanelOpen: false }),
   setIncludeArchived: (v) => set({ includeArchived: v }),
   setBusy: (b) => set({ busy: b }),

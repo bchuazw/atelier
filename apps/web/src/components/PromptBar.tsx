@@ -91,8 +91,15 @@ export default function PromptBar() {
   const [expanded, setExpanded] = useState(true);
   const [recentPrompts, setRecentPrompts] = useState<string[]>([]);
 
-  // Hydrate recent prompts when the active project changes.
+  // Hydrate recent prompts when the active project changes — and clear the
+  // stale prompt textarea. Six beta testers in a row reported "the prompt
+  // bar auto-filled with someone else's text and I forked the wrong thing"
+  // — root cause was that PromptBar stayed mounted across project switches
+  // and its local `prompt` state never reset, so a half-typed brief from
+  // Project A would still be sitting there when you opened Project B.
   useEffect(() => {
+    setPrompt("");
+    setError(null);
     setRecentPrompts(loadRecentPrompts(project?.id));
   }, [project?.id]);
 
