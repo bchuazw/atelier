@@ -22,6 +22,9 @@ const PORT = Number(process.env.ATELIER_SANDBOX_PORT || process.env.PORT || 4100
 const MODE = (process.env.ATELIER_SANDBOX_MODE || "local").toLowerCase();
 const ASSETS_DIR = resolve(process.env.ATELIER_ASSETS_DIR || "../assets");
 const VARIANTS_DIR = join(ASSETS_DIR, "variants");
+// Where the FastAPI publish endpoint copies variant trees keyed by slug.
+// Served at /p/<slug>/ — see `routes/nodes.py::publish_node`.
+const PUBLISHED_DIR = join(ASSETS_DIR, "published");
 const WEB_ORIGIN = process.env.ATELIER_WEB_ORIGIN || "*";
 const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_BUCKET = process.env.SUPABASE_BUCKET || "variants";
@@ -98,6 +101,40 @@ async function serveLocal(variantId, rest, res) {
   createReadStream(filePath).pipe(res);
 }
 
+// Serve a published variant tree from disk. Mirrors `serveLocal` but
+// rooted at `published/<slug>/` and with looser caching since publish is a
+// deliberate action — re-publish overwrites the directory in place, and a
+// short cache makes the URL feel like a real CDN-backed page when pasted
+// into other tools.
+async function servePublished(slug, rest, res) {
+  const publishedRoot = join(PUBLISHED_DIR, slug);
+  const filePath = join(publishedRoot, rest);
+  if (!isSafePath(filePath, publishedRoot)) {
+    send(res, 403, "Forbidden");
+    return;
+  }
+  let s;
+  try {
+    s = await stat(filePath);
+  } catch {
+    send(res, 404, `Missing: ${rest}`);
+    return;
+  }
+  if (s.isDirectory()) {
+    send(res, 404, "Is a directory");
+    return;
+  }
+  res.writeHead(200, {
+    "Content-Type": mimeFor(filePath),
+    "Content-Length": s.size,
+    "Access-Control-Allow-Origin": WEB_ORIGIN,
+    "Cache-Control": "public, max-age=30",
+    "X-Frame-Options": "ALLOWALL",
+    "Content-Security-Policy": "frame-ancestors *",
+  });
+  createReadStream(filePath).pipe(res);
+}
+
 function proxyFetch(url, timeoutMs = 30000) {
   return new Promise((resolveProm, rejectProm) => {
     const parsed = new URL(url);
@@ -162,6 +199,24 @@ const server = createServer(async (req, res) => {
       send(res, 200, JSON.stringify({ ok: true, service: "atelier-sandbox", mode: MODE }), {
         "Content-Type": "application/json",
       });
+      return;
+    }
+
+    // Published-URL route — `/p/<slug>/...` serves files from
+    // `<assets>/published/<slug>/`. Always local-disk (publish doesn't
+    // upload to Supabase yet — see Publish-to-URL ticket); proxy mode
+    // therefore returns a 501 rather than silently 404'ing.
+    const publishedMatch = url.pathname.match(/^\/p\/([^/]+)(\/.*)?$/);
+    if (publishedMatch) {
+      const [, slug, restRaw] = publishedMatch;
+      let rest = restRaw || "/";
+      if (rest === "/") rest = "/index.html";
+      else if (rest.endsWith("/")) rest += "index.html";
+      if (MODE === "proxy") {
+        send(res, 501, "Published URLs are only available in local sandbox mode");
+        return;
+      }
+      await servePublished(slug, rest, res);
       return;
     }
 

@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from atelier_api.db.models import Node
+from atelier_api.config import settings
+from atelier_api.db.models import Node, now_iso
 from atelier_api.db.session import get_session
 from atelier_api.storage import storage
 
@@ -264,6 +265,130 @@ async def export_node_zip(node_id: str, session: AsyncSession = Depends(get_sess
             "Cache-Control": "no-store",
         },
     )
+
+
+def _published_slug_for(node: Node) -> str:
+    """Stable, URL-safe slug derived from the node id.
+
+    Single-user assumption: collisions are ignored — first 8 chars of the
+    UUID hex give us ~4B distinct slugs, more than enough for personal use.
+    """
+    raw = (node.id or "").replace("-", "").lower()
+    return raw[:8] if raw else "unknown"
+
+
+def _public_url_for_slug(slug: str) -> str:
+    """Mint the public URL for a published slug.
+
+    Uses the same env-driven sandbox host as `/variant/` so swapping
+    `ATELIER_SANDBOX_PORT` (or the hosted public URL) flows through here.
+    """
+    # Prefer the hosted public URL if configured (Render deployments);
+    # fall back to localhost:<sandbox_port> for dev.
+    base = (settings.atelier_sandbox_public_url or settings.sandbox_base_url).rstrip("/")
+    return f"{base}/p/{slug}/"
+
+
+def _read_published_meta(node: Node) -> dict | None:
+    """Pull the `published_slug` blob out of `node.reasoning`.
+
+    We chose the `reasoning` JSON column over a new `published_slug` DB
+    column to avoid a schema migration — `reasoning` is already a free-form
+    JSON dict on every Node, and Publish-to-URL is a single-user feature
+    where we don't need to query/index the slug. Returns None if the node
+    has never been published.
+    """
+    r = node.reasoning or {}
+    meta = r.get("published_slug") if isinstance(r, dict) else None
+    if not isinstance(meta, dict):
+        return None
+    if not meta.get("slug"):
+        return None
+    return meta
+
+
+@router.post("/{node_id}/publish")
+async def publish_node(node_id: str, session: AsyncSession = Depends(get_session)):
+    """Publish (or re-publish) a variant to a public-ish URL.
+
+    Copies the variant's already-built tree into `assets/published/<slug>/`
+    so the sandbox-server can serve it at `/p/<slug>/`. Overwrites if the
+    slug already exists (re-publish flow).
+    """
+    import shutil
+
+    node = await session.get(Node, node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found")
+    if node.build_status != "ready":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Node build_status={node.build_status!r}; can't publish.",
+        )
+    try:
+        node_dir = await _ensure_node_on_disk(node)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    slug = _published_slug_for(node)
+    published_root = settings.assets_path / "published" / slug
+    # Wipe-then-copy so re-publish doesn't leave stale files behind from the
+    # previous build (e.g. a hero image the user later removed).
+    if published_root.exists():
+        shutil.rmtree(published_root, ignore_errors=True)
+    published_root.mkdir(parents=True, exist_ok=True)
+    for src in node_dir.rglob("*"):
+        if not src.is_file():
+            continue
+        rel = src.relative_to(node_dir)
+        dst = published_root / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+
+    published_at = now_iso()
+    public_url = _public_url_for_slug(slug)
+
+    # Persist on the node so subsequent GETs can return it. We merge into
+    # the existing reasoning dict rather than overwrite — fork/critic flows
+    # may have stored their own keys.
+    new_reasoning = dict(node.reasoning) if isinstance(node.reasoning, dict) else {}
+    new_reasoning["published_slug"] = {
+        "slug": slug,
+        "public_url": public_url,
+        "published_at": published_at,
+    }
+    node.reasoning = new_reasoning
+    # SQLAlchemy doesn't notice in-place dict mutations on JSON columns by
+    # default; reassigning above flags the attribute dirty. Belt-and-braces:
+    from sqlalchemy.orm.attributes import flag_modified
+
+    flag_modified(node, "reasoning")
+    await session.commit()
+
+    return {
+        "slug": slug,
+        "public_url": public_url,
+        "published_at": published_at,
+    }
+
+
+@router.get("/{node_id}/publish")
+async def get_published_state(node_id: str, session: AsyncSession = Depends(get_session)):
+    """Return the current published metadata for a node, or 404 if never published."""
+    node = await session.get(Node, node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found")
+    meta = _read_published_meta(node)
+    if not meta:
+        raise HTTPException(status_code=404, detail="Not published")
+    # Refresh the public URL each call — if the operator changes
+    # ATELIER_SANDBOX_PORT or sandbox_public_url between publish and read,
+    # we want callers to see the *current* host.
+    return {
+        "slug": meta["slug"],
+        "public_url": _public_url_for_slug(meta["slug"]),
+        "published_at": meta.get("published_at"),
+    }
 
 
 @router.get("/{node_id}/ancestors")

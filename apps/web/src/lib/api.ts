@@ -351,6 +351,33 @@ export const api = {
     request<{ ok: boolean; deleted: number }>(`/nodes/${nodeId}`, { method: "DELETE" }),
   getAncestors: (nodeId: string) =>
     request<{ chain: { id: string; title: string | null; type: string }[] }>(`/nodes/${nodeId}/ancestors`),
+  // Publish-to-URL (beta) — give a variant a stable public-ish URL the
+  // user can paste into marketing tools. POST publishes (or re-publishes,
+  // overwriting); GET returns the current published metadata or throws on
+  // 404 ("never published"). See `routes/nodes.py` for the slug scheme.
+  publishNode: (nodeId: string) =>
+    request<{ slug: string; public_url: string; published_at: string }>(
+      `/nodes/${nodeId}/publish`,
+      { method: "POST" }
+    ),
+  getPublishedState: async (nodeId: string) => {
+    // We don't want a 404 here to look like a network error in the UI —
+    // it's the expected response for "never published". Resolve to null
+    // instead so callers can branch cleanly.
+    const base =
+      (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/+$/, "") || "/api/v1";
+    const res = await fetch(`${base}/nodes/${nodeId}/publish`);
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`${res.status} ${res.statusText}: ${text}`);
+    }
+    return (await res.json()) as {
+      slug: string;
+      public_url: string;
+      published_at: string;
+    };
+  },
   setApiKey: (api_key: string) =>
     request<{ ok: boolean }>("/settings/api-key", {
       method: "POST",

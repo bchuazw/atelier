@@ -8,6 +8,8 @@ import {
   ExternalLink,
   FileCode,
   Image as ImageIcon,
+  Globe,
+  RefreshCw,
 } from "lucide-react";
 import clsx from "clsx";
 import { api } from "@/lib/api";
@@ -30,12 +32,41 @@ function humanBytes(n: number): string {
   return `${(n / 1024 / 1024).toFixed(2)} MB`;
 }
 
+function relativeTime(iso: string): string {
+  // Server returns naive UTC ISO strings (no Z suffix) — append Z so
+  // `new Date()` doesn't interpret it as local time and produce a wrong
+  // delta when the user's timezone isn't UTC.
+  const stamp = iso.endsWith("Z") || iso.includes("+") ? iso : iso + "Z";
+  const t = new Date(stamp).getTime();
+  if (Number.isNaN(t)) return "just now";
+  const diff = Math.max(0, Date.now() - t);
+  const s = Math.floor(diff / 1000);
+  if (s < 5) return "just now";
+  if (s < 60) return `${s} seconds ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} minute${m === 1 ? "" : "s"} ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} hour${h === 1 ? "" : "s"} ago`;
+  const d = Math.floor(h / 24);
+  return `${d} day${d === 1 ? "" : "s"} ago`;
+}
+
+type PublishedState = { slug: string; public_url: string; published_at: string };
+
 export default function ExportDialog() {
   const { exportDialogOpen, exportNodeId, closeExport, nodes } = useUI();
   const [data, setData] = useState<ExportData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Publish-to-URL (beta) — separate state so a publish failure doesn't
+  // wipe the export view, and a publish-in-flight doesn't block the
+  // existing Copy/Download path.
+  const [published, setPublished] = useState<PublishedState | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
+  const [urlCopied, setUrlCopied] = useState(false);
 
   const node = nodes.find((n) => n.id === exportNodeId) || null;
 
@@ -45,6 +76,10 @@ export default function ExportDialog() {
       setLoading(false);
       setError(null);
       setCopied(false);
+      setPublished(null);
+      setPublishing(false);
+      setPublishError(null);
+      setUrlCopied(false);
       return;
     }
     setLoading(true);
@@ -60,6 +95,17 @@ export default function ExportDialog() {
       .then(setData)
       .catch((e: any) => setError(e?.message || "Export failed"))
       .finally(() => setLoading(false));
+    // Fetch existing published state in parallel — if the user already
+    // published this variant we want to surface the URL immediately
+    // instead of making them click "Publish" again.
+    api
+      .getPublishedState(exportNodeId)
+      .then((state) => setPublished(state))
+      .catch(() => {
+        // Ignore — published state is best-effort. If the API is down the
+        // export view above will surface that error path; if the network
+        // recovers the user can still click Publish to retry.
+      });
   }, [exportDialogOpen, exportNodeId]);
 
   if (!exportDialogOpen || !node) return null;
@@ -95,6 +141,34 @@ export default function ExportDialog() {
     const a = document.createElement("a");
     a.href = `${base}/nodes/${exportNodeId}/export/zip`;
     a.click();
+  }
+
+  async function publish() {
+    if (!exportNodeId) return;
+    setPublishing(true);
+    setPublishError(null);
+    try {
+      const result = await api.publishNode(exportNodeId);
+      setPublished(result);
+    } catch (e: any) {
+      // Most likely cause locally: the sandbox-server (which serves the
+      // published URL) isn't running. The publish itself succeeded API-side
+      // — surface the message so the user can act on it.
+      setPublishError(e?.message || "Publish failed");
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  async function copyPublishedUrl() {
+    if (!published) return;
+    try {
+      await navigator.clipboard.writeText(published.public_url);
+      setUrlCopied(true);
+      setTimeout(() => setUrlCopied(false), 1800);
+    } catch {
+      setPublishError("Clipboard copy failed (browser permission?).");
+    }
   }
 
   return (
@@ -139,6 +213,98 @@ export default function ExportDialog() {
             </div>
           ) : data ? (
             <>
+              {/* Publish-to-URL (beta) — sits above the existing
+                  Copy/Download section because for marketing users this
+                  is the primary action; export is the fallback. */}
+              <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-amber-600" />
+                    <span className="text-[12px] font-medium text-zinc-800">
+                      Publish to a public URL
+                    </span>
+                    <span className="text-[10px] uppercase tracking-wider text-amber-700 bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5">
+                      beta
+                    </span>
+                  </div>
+                  {published && (
+                    <span className="text-[11px] text-zinc-500">
+                      published {relativeTime(published.published_at)}
+                    </span>
+                  )}
+                </div>
+
+                {published ? (
+                  <>
+                    <div className="flex items-center gap-1.5">
+                      <code
+                        className="flex-1 min-w-0 truncate font-mono text-[11px] bg-white border border-zinc-200 rounded px-2 py-1.5 text-zinc-700"
+                        title={published.public_url}
+                      >
+                        {published.public_url}
+                      </code>
+                      <button
+                        onClick={copyPublishedUrl}
+                        className="flex items-center gap-1 px-2 py-1.5 text-[11px] rounded bg-white border border-zinc-300 hover:border-zinc-500 text-zinc-700"
+                        title="Copy URL"
+                      >
+                        {urlCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        {urlCopied ? "Copied" : "Copy"}
+                      </button>
+                      <a
+                        href={published.public_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1 px-2 py-1.5 text-[11px] rounded bg-white border border-zinc-300 hover:border-zinc-500 text-zinc-700"
+                        title="Open in new tab"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" /> Open
+                      </a>
+                      <button
+                        onClick={publish}
+                        disabled={publishing}
+                        className="flex items-center gap-1 px-2 py-1.5 text-[11px] rounded bg-amber-500 hover:bg-amber-400 text-black font-medium disabled:opacity-50"
+                        title="Re-publish — overwrites the existing URL with the latest variant content"
+                      >
+                        {publishing ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="w-3.5 h-3.5" />
+                        )}
+                        Re-publish
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-zinc-500">
+                      Paste this URL into your marketing tool. Re-publishing overwrites the same URL with the current variant — no analytics, A/B routing, or auth yet.
+                    </p>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={publish}
+                      disabled={publishing}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-amber-500 hover:bg-amber-400 text-black font-medium disabled:opacity-50"
+                    >
+                      {publishing ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Globe className="w-4 h-4" />
+                      )}
+                      {publishing ? "Publishing…" : "Publish to a public URL"}
+                    </button>
+                    <span className="text-[11px] text-zinc-500">
+                      Get a stable link you can paste into a marketing tool.
+                    </span>
+                  </div>
+                )}
+
+                {publishError && (
+                  <div className="text-[11px] text-rose-600 bg-rose-50 border border-rose-200 rounded px-2 py-1">
+                    {publishError}
+                  </div>
+                )}
+              </div>
+
               {/* HTML code block */}
               <div className="relative">
                 <pre className="bg-white border border-zinc-200 rounded-lg p-3 text-[11px] font-mono leading-snug max-h-[340px] overflow-auto text-zinc-800 whitespace-pre-wrap">
