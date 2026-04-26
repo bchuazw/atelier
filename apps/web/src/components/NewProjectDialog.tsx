@@ -177,8 +177,12 @@ export default function NewProjectDialog({
 
   return (
     <div className="fixed inset-0 z-50 bg-zinc-900/40 flex items-center justify-center p-4">
-      <div className="w-full max-w-xl bg-stone-50 border border-zinc-200 rounded-xl shadow-2xl">
-        <div className="flex items-center justify-between p-4 border-b border-zinc-200">
+      {/* max-h + flex-col so the body can scroll within the modal instead of
+          extending past the viewport. A fresh-user tester missed the live
+          "+N pins will be saved" hint because the Brand Kit section was
+          below the fold on a laptop screen and the modal didn't scroll. */}
+      <div className="w-full max-w-xl bg-stone-50 border border-zinc-200 rounded-xl shadow-2xl flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between p-4 border-b border-zinc-200 flex-shrink-0">
           <div className="flex items-center gap-2">
             <Globe className="w-5 h-5 text-amber-400" />
             <h2 className="text-base font-medium">New project</h2>
@@ -188,7 +192,7 @@ export default function NewProjectDialog({
           </button>
         </div>
 
-        <div className="p-4 space-y-4">
+        <div className="p-4 space-y-4 overflow-y-auto">
           <div>
             <label className="text-xs text-zinc-500 mb-1.5 block">Name</label>
             <input
@@ -357,14 +361,11 @@ export default function NewProjectDialog({
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="flex items-center gap-1.5">
-                      <input
-                        type="color"
-                        aria-label="Primary color"
-                        value={primaryColor || "#000000"}
-                        onChange={(e) => setPrimaryColor(e.target.value)}
+                      <ColorSwatch
+                        value={primaryColor}
+                        onChange={setPrimaryColor}
                         disabled={running}
-                        title="Primary color"
-                        className="h-7 w-8 border border-zinc-200 rounded bg-white cursor-pointer"
+                        label="Primary color"
                       />
                       <input
                         value={primaryColor}
@@ -375,14 +376,11 @@ export default function NewProjectDialog({
                       />
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <input
-                        type="color"
-                        aria-label="Accent color"
-                        value={accentColor || "#000000"}
-                        onChange={(e) => setAccentColor(e.target.value)}
+                      <ColorSwatch
+                        value={accentColor}
+                        onChange={setAccentColor}
                         disabled={running}
-                        title="Accent color"
-                        className="h-7 w-8 border border-zinc-200 rounded bg-white cursor-pointer"
+                        label="Accent color"
                       />
                       <input
                         value={accentColor}
@@ -487,7 +485,7 @@ export default function NewProjectDialog({
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-2 p-4 border-t border-zinc-200 bg-stone-50/60">
+        <div className="flex items-center justify-between gap-2 p-4 border-t border-zinc-200 bg-stone-50/60 flex-shrink-0">
           <div className="text-[11px] text-zinc-500 flex-1 min-w-0 truncate">
             {disabledReason || "Ready — Claude will prep the seed in a few seconds."}
           </div>
@@ -509,6 +507,61 @@ export default function NewProjectDialog({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Color swatch with an explicit "not set" state. Earlier we used a bare
+ * <input type="color"> with `value={x || "#000000"}`, which displayed as
+ * a solid black square — a fresh-user tester thought she'd already filled
+ * black and skipped the field. This wrapper renders a checkered placeholder
+ * + dashed border + tiny "+" cue when the value is empty, and only swaps to
+ * the actual color picker once a color is chosen. Clicking the placeholder
+ * focuses the hidden picker so the interaction model is unchanged.
+ */
+function ColorSwatch({
+  value,
+  onChange,
+  disabled,
+  label,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+  label: string;
+}) {
+  const empty = !value;
+  return (
+    <div className="relative h-7 w-8 flex-shrink-0">
+      <input
+        type="color"
+        aria-label={label}
+        value={value || "#cccccc"}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        title={label}
+        className={
+          "absolute inset-0 h-full w-full rounded cursor-pointer " +
+          (empty
+            ? "border border-dashed border-zinc-300 opacity-0"
+            : "border border-zinc-200")
+        }
+      />
+      {empty && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 rounded border border-dashed border-zinc-300 flex items-center justify-center text-zinc-400 text-[11px] font-medium"
+          style={{
+            backgroundImage:
+              "linear-gradient(45deg, #e4e4e7 25%, transparent 25%), linear-gradient(-45deg, #e4e4e7 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e4e4e7 75%), linear-gradient(-45deg, transparent 75%, #e4e4e7 75%)",
+            backgroundSize: "6px 6px",
+            backgroundPosition: "0 0, 0 3px, 3px -3px, -3px 0",
+          }}
+        >
+          +
+        </div>
+      )}
     </div>
   );
 }
