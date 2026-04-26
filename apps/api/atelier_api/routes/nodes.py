@@ -104,6 +104,18 @@ async def delete_node(node_id: str, session: AsyncSession = Depends(get_session)
                 to_delete.append(cid)
                 frontier.append(cid)
 
+    # Gather published slugs BEFORE the DB delete commits — we need to read
+    # `node.reasoning` while the rows still exist. After commit, the Node
+    # objects are gone and we'd lose the slug -> directory mapping.
+    published_slugs: list[str] = []
+    for nid in to_delete:
+        n = await session.get(Node, nid)
+        if n is None:
+            continue
+        meta = _read_published_meta(n)
+        if meta and meta.get("slug"):
+            published_slugs.append(meta["slug"])
+
     # If the working_node_id pointed at any node we're about to delete,
     # reset it so the project doesn't end up with a dangling reference.
     project = await session.get(Project, project_id)
@@ -143,7 +155,33 @@ async def delete_node(node_id: str, session: AsyncSession = Depends(get_session)
         except Exception as e:  # pragma: no cover — defensive
             failed.append(f"{nid}: {e}")
 
-    return {"ok": True, "deleted": len(to_delete), "storage_cleaned": cleaned, "storage_failed": failed}
+    # Best-effort published-tree cleanup. A stale `assets/published/<slug>/`
+    # would otherwise outlive its source variant and continue serving at
+    # `/p/<slug>/`. `rmtree(ignore_errors=True)` swallows missing dirs and
+    # cross-filesystem quirks (Render mount, etc.). Failures are logged-not-
+    # raised so they cannot roll back the DB delete.
+    import shutil as _shutil
+    import logging as _logging
+
+    published_cleaned = 0
+    for slug in published_slugs:
+        target = settings.assets_path / "published" / slug
+        try:
+            if target.exists():
+                _shutil.rmtree(target, ignore_errors=True)
+            published_cleaned += 1
+        except Exception as e:  # pragma: no cover — defensive
+            _logging.getLogger(__name__).warning(
+                "published cleanup failed for slug=%s: %s", slug, e
+            )
+
+    return {
+        "ok": True,
+        "deleted": len(to_delete),
+        "storage_cleaned": cleaned,
+        "storage_failed": failed,
+        "published_cleaned": published_cleaned,
+    }
 
 
 @router.get("/{node_id}/export")
