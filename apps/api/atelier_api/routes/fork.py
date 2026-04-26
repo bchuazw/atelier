@@ -139,11 +139,17 @@ def _build_pins_block(style_pins: list[dict] | None) -> str:
 def _strict_color_pins_violated(html: str, style_pins: list[dict] | None) -> list[dict]:
     """Return the subset of strict color pins whose value is missing from the
     HTML. Only `kind == "color"` + `strict == True` pins are checked: those are
-    the ones with a substring match that's reliable enough to be worth a
-    re-prompt round. Other kinds (dimension/enum/font/text) are too noisy to
-    validate this way and are left to the prompt's MUST language."""
+    the ones with a match reliable enough to be worth a re-prompt round.
+    Other kinds (dimension/enum/font/text) are too noisy to validate this way
+    and are left to the prompt's MUST language.
+
+    Match is regex-based (not substring) so a 3-char hex like `#abc` doesn't
+    spuriously satisfy a check against an HTML containing `#abcdef`. The
+    trailing `(?![0-9a-f])` lookahead enforces a real boundary."""
     if not style_pins:
         return []
+    import re
+
     violations: list[dict] = []
     lowered = html.lower()
     for p in style_pins:
@@ -154,7 +160,7 @@ def _strict_color_pins_violated(html: str, style_pins: list[dict] | None) -> lis
             continue
         # Tolerate an absent leading '#' on the pin's stored value.
         candidates = {val, val if val.startswith("#") else f"#{val}"}
-        if not any(c in lowered for c in candidates):
+        if not any(re.search(rf"{re.escape(c)}(?![0-9a-f])", lowered) for c in candidates):
             violations.append(p)
     return violations
 
