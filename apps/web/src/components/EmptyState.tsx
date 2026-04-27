@@ -39,8 +39,13 @@ export default function EmptyState({ onNewProject }: { onNewProject: () => void 
   }
 
   useEffect(() => {
-    void reload(false);
-    // Intentionally only on mount; the toggle handler refetches explicitly.
+    // Always include archived on initial load so the "Show N archived"
+    // toggle can render with a real count. The active list still renders
+    // exactly the same — we just split client-side. A production beta
+    // tester archived a project and had no UI path to restore it because
+    // the toggle never rendered (chicken/egg: count was 0 because we
+    // hadn't fetched archived yet).
+    void reload(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

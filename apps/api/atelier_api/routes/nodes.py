@@ -736,17 +736,25 @@ async def publish_node(node_id: str, session: AsyncSession = Depends(get_session
 
 @router.get("/{node_id}/publish")
 async def get_published_state(node_id: str, session: AsyncSession = Depends(get_session)):
-    """Return the current published metadata for a node, or 404 if never published."""
+    """Return the current published metadata for a node.
+
+    Returns 200 with `published: false` (and no slug/url) when the node
+    has never been published — earlier this was a 404, which polluted the
+    production browser console with an error every time the Export dialog
+    opened, and worried security-minded viewers in dev tools. The 404 path
+    is preserved for the "node truly does not exist" case.
+    """
     node = await session.get(Node, node_id)
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
     meta = _read_published_meta(node)
     if not meta:
-        raise HTTPException(status_code=404, detail="Not published")
+        return {"published": False, "slug": None, "public_url": None, "published_at": None}
     # Refresh the public URL each call — if the operator changes
     # ATELIER_SANDBOX_PORT or sandbox_public_url between publish and read,
     # we want callers to see the *current* host.
     return {
+        "published": True,
         "slug": meta["slug"],
         "public_url": _public_url_for_slug(meta["slug"]),
         "published_at": meta.get("published_at"),

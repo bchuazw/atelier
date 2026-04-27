@@ -394,9 +394,11 @@ export const api = {
       cost_cents: number;
     }>(`/nodes/${nodeId}/export/react`, { method: "POST" }),
   getPublishedState: async (nodeId: string) => {
-    // We don't want a 404 here to look like a network error in the UI —
-    // it's the expected response for "never published". Resolve to null
-    // instead so callers can branch cleanly.
+    // The API returns 200 with `{published: false}` when a node has never
+    // been published (changed from a 404 that polluted prod console
+    // logs). Older deployments may still return 404 — keep that branch
+    // for backwards compat. Resolve to null when unpublished so callers
+    // can branch cleanly on `state == null`.
     const base =
       (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/+$/, "") || "/api/v1";
     const res = await fetch(`${base}/nodes/${nodeId}/publish`);
@@ -405,10 +407,17 @@ export const api = {
       const text = await res.text();
       throw new Error(`${res.status} ${res.statusText}: ${text}`);
     }
-    return (await res.json()) as {
-      slug: string;
-      public_url: string;
-      published_at: string;
+    const body = (await res.json()) as {
+      published?: boolean;
+      slug: string | null;
+      public_url: string | null;
+      published_at: string | null;
+    };
+    if (body.published === false || !body.slug || !body.public_url) return null;
+    return {
+      slug: body.slug,
+      public_url: body.public_url,
+      published_at: body.published_at ?? "",
     };
   },
   setApiKey: (api_key: string) =>
