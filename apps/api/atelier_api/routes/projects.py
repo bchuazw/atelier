@@ -683,15 +683,16 @@ async def extract_design(body: ExtractDesignIn):
         "Return JSON only."
     )
 
-    # Step 2: call Sonnet. max_tokens=2000 is a tight budget that matches the
-    # spec's hint and keeps cold extraction time around 15-25s on a typical
-    # marketing page (similar Sonnet-rewrite latencies we see for /export/react).
+    # Step 2: call Sonnet. The seed_html_scaffold alone runs 300-800 lines of
+    # HTML (~4-8K tokens), so max_tokens=2000 truncated mid-string and produced
+    # "Unterminated string" parse failures even on simple sites like example.com.
+    # 12000 gives plenty of headroom; cold extraction stays around 25-45s.
     try:
         resp = await llm.call(
             system=EXTRACT_DESIGN_SYSTEM,
             user=user_msg,
             model="sonnet",
-            max_tokens=2000,
+            max_tokens=12000,
         )
     except Exception as e:  # pragma: no cover — Anthropic upstream failure
         raise HTTPException(status_code=500, detail=f"LLM call failed: {e}")
@@ -715,7 +716,7 @@ async def extract_design(body: ExtractDesignIn):
                 system=EXTRACT_DESIGN_SYSTEM,
                 user=retry_msg,
                 model="sonnet",
-                max_tokens=2000,
+                max_tokens=12000,
             )
             parsed = _parse_extract_design_json(resp_retry.text)
             # Aggregate retry tokens into the original response so the cost
