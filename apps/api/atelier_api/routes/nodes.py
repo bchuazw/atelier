@@ -446,16 +446,59 @@ async def _generate_react_files(node: Node, session: AsyncSession) -> dict:
     except Exception as e:  # pragma: no cover — Anthropic upstream failure
         raise HTTPException(status_code=500, detail=f"LLM call failed: {e}")
 
+    # Single-shot JSON parse → if it fails, try ONE corrective re-prompt
+    # before giving up. A freelance-dev beta tester hit a 502 on her first
+    # cold attempt (88s wasted), retried manually, and succeeded in 21s.
+    # Doing the retry server-side means the user sees a slower-than-usual
+    # success instead of a hard failure they have to act on. Both calls
+    # sum into the project's cost rollup via the persistence block below.
+    parse_error: Exception | None = None
     try:
         parsed = _parse_react_export_json(resp.text)
     except (json.JSONDecodeError, ValueError) as e:
-        raise HTTPException(
-            status_code=502,
-            detail=(
-                f"Model returned invalid JSON for React export: {e}. "
-                "Retry — the rewrite is one-shot and occasionally produces malformed output."
-            ),
+        parse_error = e
+        retry_msg = (
+            "Your previous response was not valid JSON. The error was: "
+            f"{e}\n\nFirst 400 chars of what you sent:\n{resp.text[:400]}\n\n"
+            "Re-output the SAME React project as a single JSON object only. "
+            "No prose, no markdown fences, no leading or trailing whitespace. "
+            "Start with `{` and end with `}`."
         )
+        try:
+            resp_retry = await llm.call(
+                system=REACT_EXPORT_SYSTEM,
+                user=retry_msg,
+                model="sonnet",
+                max_tokens=8192,
+            )
+            parsed = _parse_react_export_json(resp_retry.text)
+            # Aggregate the retry's tokens onto the original response so the
+            # cost rollup sees BOTH calls (ensures the user's cap check is
+            # honest about how much the JSON-parse retry actually cost).
+            base = dict(resp.usage_dict or {})
+            extra = resp_retry.usage_dict or {}
+            for k in ("input", "output", "cache_read", "cache_creation"):
+                base[k] = (base.get(k) or 0) + (extra.get(k) or 0)
+            resp.usage_dict = base
+            resp = resp_retry  # use the retry's text + model going forward
+            resp.usage_dict = base
+        except (json.JSONDecodeError, ValueError) as e2:
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"Model returned invalid JSON twice for React export. "
+                    f"First: {parse_error}. Retry: {e2}. "
+                    "Try again or split the page into smaller variants."
+                ),
+            )
+        except Exception as e2:  # pragma: no cover — Anthropic upstream failure on retry
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"First call returned invalid JSON ({parse_error}); "
+                    f"corrective retry failed: {e2}."
+                ),
+            )
 
     usage = resp.usage_dict
     cost_cents = cost_cents_for_usage(usage, resp.model)
