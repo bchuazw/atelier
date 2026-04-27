@@ -55,7 +55,14 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
 
   async function del() {
     if (!project) return;
-    if (!confirm(`Delete project "${project.name}"?`)) return;
+    const ok = await useUI.getState().showConfirm({
+      title: "Delete project?",
+      message: `"${project.name}" will be removed permanently along with every variant and asset under it.`,
+      confirmLabel: "Delete project",
+      cancelLabel: "Cancel",
+      tone: "danger",
+    });
+    if (!ok) return;
     await api.deleteProject(project.id);
     setTree(null, [], []);
   }

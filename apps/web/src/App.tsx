@@ -16,6 +16,7 @@ import ExportDialog from "./components/ExportDialog";
 import UndoToast from "./components/UndoToast";
 import ErrorToast from "./components/ErrorToast";
 import CostCapBanner from "./components/CostCapBanner";
+import AppDialog from "./components/AppDialog";
 import { useUI } from "./lib/store";
 import { api } from "./lib/api";
 
@@ -59,7 +60,12 @@ export default function App() {
         ui.criticsDialogOpen ||
         ui.exportDialogOpen ||
         ui.viewerOpen ||
-        ui.contextPanelOpen;
+        ui.contextPanelOpen ||
+        // AppDialog handles its own Esc/Tab — but we still want to skip
+        // the global shortcut letters while it's open so Shift+F doesn't
+        // try to fork through the modal. Esc itself is handled in capture
+        // phase by AppDialog so it short-circuits before reaching here.
+        ui.dialogQueue.length > 0;
       if (anyDialogOpen) return;
       if (!project) return;
 
@@ -74,8 +80,9 @@ export default function App() {
       // the universal "what can I do" key.
       if (e.key === "?" || (e.shiftKey && e.key === "/")) {
         e.preventDefault();
-        alert(
-          "Atelier keyboard shortcuts\n\n" +
+        void ui.showInfo({
+          title: "Atelier keyboard shortcuts",
+          message:
             "Shift+F — Fork the targeted node\n" +
             "Shift+C — Critics on the targeted node\n" +
             "Shift+B — Feedback (paste-stakeholder) on the targeted node\n" +
@@ -86,8 +93,8 @@ export default function App() {
             "Inside the Compare viewer:\n" +
             "S — Side by side · D — Split · O — Overlay\n" +
             "1 — Desktop · 2 — Tablet · 3 — Mobile\n" +
-            "Esc — close"
-        );
+            "Esc — close",
+        });
         return;
       }
 
@@ -160,6 +167,7 @@ export default function App() {
       <ContextPanel />
       <UndoToast />
       <ErrorToast />
+      <AppDialog />
     </div>
   );
 }

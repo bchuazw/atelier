@@ -55,12 +55,16 @@ export default function EmptyState({ onNewProject }: { onNewProject: () => void 
   }
 
   async function deleteFromList(p: ProjectDTO) {
-    if (
-      !confirm(
-        `Delete project "${p.name}" permanently? This removes all variants and assets and cannot be undone.\n\n(Tip: "Archive" hides it from your dashboard but keeps the data.)`
-      )
-    )
-      return;
+    const ok = await useUI.getState().showConfirm({
+      title: "Delete project permanently?",
+      message:
+        `"${p.name}" — this removes all variants and assets and cannot be undone.\n\n` +
+        `(Tip: "Archive" hides it from your dashboard but keeps the data.)`,
+      confirmLabel: "Delete permanently",
+      cancelLabel: "Keep it",
+      tone: "danger",
+    });
+    if (!ok) return;
     setBusyId(p.id);
     try {
       await api.deleteProject(p.id);

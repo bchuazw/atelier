@@ -6,6 +6,29 @@ type CompareSelection = {
   b: string | null;
 };
 
+// Custom in-app dialogs (replace native window.confirm / window.alert which
+// look unprofessional + freeze the page). FIFO queue so consecutive
+// `showConfirm`/`showInfo` calls render one-at-a-time instead of stacking.
+export type DialogRequest =
+  | {
+      kind: "confirm";
+      id: string;
+      title?: string;
+      message: string;
+      confirmLabel?: string;
+      cancelLabel?: string;
+      tone?: "default" | "danger";
+      resolve: (ok: boolean) => void;
+    }
+  | {
+      kind: "info";
+      id: string;
+      title?: string;
+      message: string;
+      confirmLabel?: string;
+      resolve: () => void;
+    };
+
 type MergeDrag = {
   source_id: string;
   hover_target_id: string | null;
@@ -70,6 +93,10 @@ type UIState = {
   // user dismisses it or successfully forks again — the message and CTA need
   // more dwell time than the auto-fading errorToast.
   costCapBanner: { total_cost_cents: number; cost_cap_cents: number } | null;
+  // FIFO queue of in-app confirm/info dialogs. AppDialog renders only the
+  // head — subsequent enqueues wait their turn so back-to-back showConfirm
+  // calls don't stack overlapping modals.
+  dialogQueue: DialogRequest[];
 
   // actions
   setTree: (project: ProjectDTO | null, nodes: NodeDTO[], edges: EdgeDTO[]) => void;
@@ -126,6 +153,25 @@ type UIState = {
   // explanation + a one-click jump to the cap input.
   showCostCapBanner: (data: { total_cost_cents: number; cost_cap_cents: number }) => void;
   dismissCostCapBanner: () => void;
+  // Enqueue an in-app confirm dialog. Resolves with true on Confirm,
+  // false on Cancel / Esc / backdrop click. Defaults: tone="default"
+  // (amber), confirmLabel="Confirm", cancelLabel="Cancel".
+  showConfirm: (opts: {
+    title?: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    tone?: "default" | "danger";
+  }) => Promise<boolean>;
+  // Enqueue an in-app info dialog. Resolves when the user dismisses
+  // (button click, Esc, or backdrop click). Single "Got it" button by default.
+  showInfo: (opts: {
+    title?: string;
+    message: string;
+    confirmLabel?: string;
+  }) => Promise<void>;
+  // Pop the head of dialogQueue and resolve its promise. Used by AppDialog.
+  resolveDialog: (id: string, ok: boolean) => void;
 };
 
 export const useUI = create<UIState>((set) => ({
@@ -157,6 +203,7 @@ export const useUI = create<UIState>((set) => ({
   pendingUndo: null,
   errorToast: null,
   costCapBanner: null,
+  dialogQueue: [],
 
   setTree: (project, nodes, edges) => set({ project, nodes, edges }),
   setProject: (project) => set({ project }),
@@ -330,4 +377,50 @@ export const useUI = create<UIState>((set) => ({
   dismissError: () => set({ errorToast: null }),
   showCostCapBanner: (data) => set({ costCapBanner: data }),
   dismissCostCapBanner: () => set({ costCapBanner: null }),
+  showConfirm: ({ title, message, confirmLabel, cancelLabel, tone }) =>
+    new Promise<boolean>((resolve) => {
+      const id = `dlg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      set((s) => ({
+        dialogQueue: [
+          ...s.dialogQueue,
+          {
+            kind: "confirm",
+            id,
+            title,
+            message,
+            confirmLabel,
+            cancelLabel,
+            tone: tone ?? "default",
+            resolve,
+          },
+        ],
+      }));
+    }),
+  showInfo: ({ title, message, confirmLabel }) =>
+    new Promise<void>((resolve) => {
+      const id = `dlg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      set((s) => ({
+        dialogQueue: [
+          ...s.dialogQueue,
+          {
+            kind: "info",
+            id,
+            title,
+            message,
+            confirmLabel,
+            resolve,
+          },
+        ],
+      }));
+    }),
+  resolveDialog: (id, ok) =>
+    set((s) => {
+      const target = s.dialogQueue.find((d) => d.id === id);
+      if (!target) return {};
+      // Resolve outside the set call's return, but it's a sync resolve so
+      // ordering vs. state update doesn't matter for callers.
+      if (target.kind === "confirm") target.resolve(ok);
+      else target.resolve();
+      return { dialogQueue: s.dialogQueue.filter((d) => d.id !== id) };
+    }),
 }));

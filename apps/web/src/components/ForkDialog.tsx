@@ -69,10 +69,14 @@ export default function ForkDialog() {
       // three tiers. Keeps the user honest about what they're spending.
       const perCallUsd = shootout ? 0.06 : model === "opus" ? 0.18 : model === "haiku" ? 0.01 : 0.06;
       const totalUsd = (perCallUsd * fanCount).toFixed(2);
-      const ok = window.confirm(
-        `This will fire ${fanCount} parallel LLM call${fanCount === 1 ? "" : "s"} ` +
-          `(~$${totalUsd}). Continue?`
-      );
+      const ok = await useUI.getState().showConfirm({
+        title: "Confirm parallel fan-out",
+        message:
+          `This will fire ${fanCount} parallel LLM call${fanCount === 1 ? "" : "s"} ` +
+          `(~$${totalUsd}). Continue?`,
+        confirmLabel: "Run them",
+        cancelLabel: "Cancel",
+      });
       if (!ok) return;
     }
     submitInFlight.current = true;

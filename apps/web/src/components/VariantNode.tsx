@@ -68,12 +68,17 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
   async function setAsCheckpoint(e: React.MouseEvent) {
     e.stopPropagation();
     if (!project) return;
-    if (
-      !confirm(
-        `Set "${node.title || "this node"}" as the checkpoint? Older siblings and ancestors will be archived (still in DB) to keep the canvas fast. You can undo from the top bar.`
-      )
-    )
-      return;
+    const ok = await useUI.getState().showConfirm({
+      title: "Set as checkpoint?",
+      message:
+        `"${node.title || "this node"}" will become the new working head. ` +
+        `Older siblings and ancestors are archived (still in the DB) to keep the canvas fast. ` +
+        `You can undo this from the top bar.`,
+      confirmLabel: "Set checkpoint",
+      cancelLabel: "Cancel",
+      tone: "danger",
+    });
+    if (!ok) return;
     await api.patchProject(project.id, { active_checkpoint_id: node.id });
     const tree = await api.getTree(project.id, includeArchived);
     setTree(tree.project, tree.nodes, tree.edges);
