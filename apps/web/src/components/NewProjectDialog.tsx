@@ -1,10 +1,22 @@
 import { useEffect, useState } from "react";
-import { X, Loader2, Globe, Code, LayoutTemplate, Pin, ChevronDown, ChevronRight } from "lucide-react";
+import { X, Loader2, Globe, Code, LayoutTemplate, Pin, ChevronDown, ChevronRight, Wand2 } from "lucide-react";
 import clsx from "clsx";
 import { api, type StylePin, type TemplateManifestEntry } from "@/lib/api";
 import { useUI } from "@/lib/store";
 
-type SeedMode = "url" | "html" | "template";
+// "match" = the new "Match an existing site" mode: fetch the URL, hand to
+// Claude, get back style pins + a seed HTML scaffold the user can fork from.
+// Distinct from "url" (which raw-fetches into a sandbox) because the result
+// is design-token analysis + a generated scaffold, not the live page itself.
+type SeedMode = "url" | "html" | "template" | "match";
+
+type ExtractedDesign = {
+  summary: string;
+  style_pins: StylePin[];
+  seed_html: string;
+  model_used: string;
+  cost_cents: number;
+};
 
 // Same font list ContextPanel offers in its `kind: "font"` datalist — kept in
 // sync visually so the New Project dialog and the Style Pins editor feel like
@@ -50,6 +62,19 @@ function buildBrandKitPins(fields: {
   return pins;
 }
 
+// Merge two pin lists, preferring entries later in the array (manual
+// Brand Kit overrides extracted) when `prop` collides. Used by "Match a
+// site" so a user typing "primary color = #123" in the Brand Kit beats
+// whatever Claude picked. Order-stable: the first occurrence's position is
+// preserved; the override only swaps the value/kind/strict.
+function dedupePins(pins: StylePin[]): StylePin[] {
+  const byProp = new Map<string, StylePin>();
+  for (const p of pins) {
+    byProp.set(p.prop.trim().toLowerCase(), p);
+  }
+  return Array.from(byProp.values());
+}
+
 export default function NewProjectDialog({
   open,
   onClose,
@@ -66,6 +91,17 @@ export default function NewProjectDialog({
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // "Match a site" extraction state. `extracting` drives a two-phase status
+  // line ("Reading the site…" → "Extracting design tokens…"). On success we
+  // stash the result in `extracted` so a small preview block can render the
+  // detected summary + pin chips, and the seed_html is held for project
+  // creation. `analyzeUrl` is the field's text — kept separate from `url`
+  // (the raw-fetch mode's input) so switching tabs doesn't blow either away.
+  const [analyzeUrl, setAnalyzeUrl] = useState("");
+  const [extracting, setExtracting] = useState<false | "fetching" | "extracting">(false);
+  const [extracted, setExtracted] = useState<ExtractedDesign | null>(null);
+  const [extractError, setExtractError] = useState<string | null>(null);
 
   // Brand Kit (optional) — collapsed by default so the existing fast path
   // (name + template/url/html → Create) is unchanged. When ANY brand field
@@ -95,6 +131,10 @@ export default function NewProjectDialog({
       setHeadingWeight("");
       setTone("");
       setBannedWords("");
+      setAnalyzeUrl("");
+      setExtracting(false);
+      setExtracted(null);
+      setExtractError(null);
     }
   }, [open]);
 
@@ -125,12 +165,17 @@ export default function NewProjectDialog({
         seedHtml = html;
       } else if (mode === "url" && url.trim()) {
         seedUrl = url.trim();
+      } else if (mode === "match" && extracted) {
+        // "Match a site" succeeded: ship the Claude-generated scaffold as
+        // the seed_html and let the extracted style pins flow through
+        // alongside any extra Brand Kit fields the user filled in below.
+        seedHtml = extracted.seed_html;
       }
       // Build the optional Brand Kit pins from any non-empty fields. We
       // create them with strict=false so users can flip individual pins to
       // strict later from the Context Panel — matches Theo's ask: "pre-load
       // Style Pins" without forcing his palette to be non-negotiable.
-      const pins = buildBrandKitPins({
+      const manualPins = buildBrandKitPins({
         primaryColor,
         accentColor,
         bodyFont,
@@ -138,6 +183,13 @@ export default function NewProjectDialog({
         tone,
         bannedWords,
       });
+      // In "match" mode, prepend the extracted pins. Manual Brand Kit fields
+      // take precedence on conflict (same `prop`) so a user can override the
+      // model's pick without losing the rest. Cap remains 12 server-side.
+      const pins =
+        mode === "match" && extracted
+          ? dedupePins([...extracted.style_pins, ...manualPins])
+          : manualPins;
       const created = await api.createProject({
         name: name.trim(),
         seed_url: seedUrl,
@@ -172,8 +224,45 @@ export default function NewProjectDialog({
     ? "Paste some HTML (or switch to a Template / URL)."
     : mode === "url" && url.trim() && !/^https?:\/\//.test(url.trim())
     ? "URL must start with http:// or https://"
+    : mode === "match" && !extracted
+    ? "Click Analyze to extract the design tokens first."
     : "";
   const canSubmit = !disabledReason;
+
+  async function analyzeSite() {
+    const trimmed = analyzeUrl.trim();
+    if (!trimmed) {
+      setExtractError("Enter a URL.");
+      return;
+    }
+    if (!/^https?:\/\//i.test(trimmed)) {
+      setExtractError("URL must start with http:// or https://");
+      return;
+    }
+    setExtractError(null);
+    setExtracted(null);
+    // Two-phase status: we can't actually observe the network <-> LLM split
+    // server-side without an SSE stream, so we approximate it. ~3s into the
+    // call we flip from "fetching" to "extracting" so the user sees forward
+    // motion instead of one long indeterminate spinner.
+    setExtracting("fetching");
+    const t = setTimeout(() => setExtracting("extracting"), 3000);
+    try {
+      const result = await api.extractDesign(trimmed);
+      setExtracted({
+        summary: result.summary,
+        style_pins: result.style_pins,
+        seed_html: result.seed_html,
+        model_used: result.model_used,
+        cost_cents: result.cost_cents,
+      });
+    } catch (e: any) {
+      setExtractError(e?.message || "Extraction failed.");
+    } finally {
+      clearTimeout(t);
+      setExtracting(false);
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-zinc-900/40 flex items-center justify-center p-4">
@@ -210,6 +299,7 @@ export default function NewProjectDialog({
               {(
                 [
                   { id: "template", label: "Templates", icon: LayoutTemplate },
+                  { id: "match", label: "Match a site", icon: Wand2 },
                   { id: "url", label: "Seed from URL", icon: Globe },
                   { id: "html", label: "Paste HTML", icon: Code },
                 ] as const
@@ -304,6 +394,18 @@ export default function NewProjectDialog({
                   We inline CSS and images, drop common analytics scripts, and force UTF-8 decoding.
                 </p>
               </>
+            ) : mode === "match" ? (
+              <MatchSiteSection
+                url={analyzeUrl}
+                onUrlChange={setAnalyzeUrl}
+                onAnalyze={analyzeSite}
+                phase={extracting}
+                extracted={extracted}
+                onClearExtracted={() => setExtracted(null)}
+                error={extractError}
+                disabled={running}
+                onEditPins={() => setBrandOpen(true)}
+              />
             ) : (
               <>
                 <textarea
@@ -503,11 +605,176 @@ export default function NewProjectDialog({
             className="flex items-center gap-1.5 px-4 py-1.5 text-sm rounded bg-amber-500 hover:bg-amber-400 text-black font-medium disabled:opacity-50"
           >
             {running && <Loader2 className="w-4 h-4 animate-spin" />}
-            {running ? "Preparing seed…" : "Create"}
+            {running
+              ? "Preparing seed…"
+              : mode === "match" && extracted
+              ? "Create with extracted design"
+              : "Create"}
           </button>
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * "Match a site" mode panel. Owns the URL input + Analyze trigger + the
+ * extracted-preview block (summary line, pin chips, "Edit pins" link). The
+ * parent holds the actual extracted state so submit() can read it; this
+ * component is presentation only. The four UX states are rendered inline:
+ *   idle    → just the input + Analyze button
+ *   analyzing→ spinner + two-phase status text ("Reading…" → "Extracting…")
+ *   extracted-preview → summary + chips + "Edit pins" link + Re-analyze
+ *   error   → red strip with the message; input/button still active
+ */
+function MatchSiteSection({
+  url,
+  onUrlChange,
+  onAnalyze,
+  phase,
+  extracted,
+  onClearExtracted,
+  error,
+  disabled,
+  onEditPins,
+}: {
+  url: string;
+  onUrlChange: (v: string) => void;
+  onAnalyze: () => void;
+  phase: false | "fetching" | "extracting";
+  extracted: ExtractedDesign | null;
+  onClearExtracted: () => void;
+  error: string | null;
+  disabled: boolean;
+  onEditPins: () => void;
+}) {
+  const analyzing = phase !== false;
+  const status =
+    phase === "fetching"
+      ? "Reading the site… (15-30s)"
+      : phase === "extracting"
+      ? "Extracting design tokens…"
+      : "";
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        <input
+          value={url}
+          onChange={(e) => onUrlChange(e.target.value)}
+          placeholder="https://stripe.com"
+          type="url"
+          disabled={disabled || analyzing}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              if (!analyzing) onAnalyze();
+            }
+          }}
+          className="flex-1 bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+        />
+        <button
+          type="button"
+          onClick={onAnalyze}
+          disabled={disabled || analyzing || !url.trim()}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm rounded bg-amber-500 hover:bg-amber-400 text-black font-medium disabled:opacity-50 whitespace-nowrap"
+        >
+          {analyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+          {extracted ? "Re-analyze" : "Analyze"}
+        </button>
+      </div>
+      <p className="text-[11px] text-zinc-500">
+        Claude reads the site and pre-populates a Brand Kit + seed scaffold so you
+        skip the screenshot-and-hand-craft step. Stateless until you click Create.
+      </p>
+
+      {analyzing && (
+        <div className="flex items-center gap-2 text-[12px] text-zinc-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+          <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />
+          <span>{status}</span>
+        </div>
+      )}
+
+      {error && !analyzing && (
+        <div className="text-[12px] text-rose-600 bg-rose-50 border border-rose-300 rounded px-3 py-2">
+          {error}
+        </div>
+      )}
+
+      {extracted && !analyzing && (
+        <div className="border border-amber-200 bg-amber-50/60 rounded-lg p-3 space-y-2">
+          <div className="flex items-start gap-2">
+            <Wand2 className="w-3.5 h-3.5 text-amber-700 mt-0.5 flex-shrink-0" />
+            <div className="text-[12px] text-zinc-800 leading-snug">
+              <span className="font-medium">Detected style:</span> {extracted.summary}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {extracted.style_pins.map((p, i) => (
+              <PinChip key={`${p.prop}-${i}`} pin={p} />
+            ))}
+          </div>
+          <div className="flex items-center justify-between text-[11px] text-zinc-600 pt-1">
+            <button
+              type="button"
+              onClick={onEditPins}
+              className="text-amber-700 hover:text-amber-900 underline underline-offset-2"
+            >
+              Edit pins in Brand Kit ↓
+            </button>
+            <span className="text-zinc-500">
+              {extracted.style_pins.length} pin{extracted.style_pins.length === 1 ? "" : "s"} ·
+              ~{(extracted.cost_cents / 100).toFixed(2)} USD ·{" "}
+              <button
+                type="button"
+                onClick={onClearExtracted}
+                className="hover:text-zinc-900 underline underline-offset-2"
+              >
+                discard
+              </button>
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Compact pin chip rendered in the extraction preview. Color pins get a
+// swatch + the hex; font pins get the font name set in the actual font so
+// the user can eyeball that "Playfair Display" really did load. Other kinds
+// (text/dimension/enum) render as a plain prop:value pair.
+function PinChip({ pin }: { pin: StylePin }) {
+  if (pin.kind === "color") {
+    return (
+      <span className="inline-flex items-center gap-1.5 bg-white border border-zinc-200 rounded px-2 py-0.5 text-[11px]">
+        <span
+          className="w-3 h-3 rounded-sm border border-zinc-300"
+          style={{ backgroundColor: pin.value }}
+          aria-hidden
+        />
+        <span className="text-zinc-500">{pin.prop}:</span>
+        <span className="font-mono text-zinc-800">{pin.value}</span>
+        {pin.strict && <Pin className="w-2.5 h-2.5 text-amber-600" />}
+      </span>
+    );
+  }
+  if (pin.kind === "font") {
+    return (
+      <span className="inline-flex items-center gap-1.5 bg-white border border-zinc-200 rounded px-2 py-0.5 text-[11px]">
+        <span className="text-zinc-500">{pin.prop}:</span>
+        <span className="text-zinc-800" style={{ fontFamily: `${pin.value}, system-ui` }}>
+          {pin.value}
+        </span>
+        {pin.strict && <Pin className="w-2.5 h-2.5 text-amber-600" />}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 bg-white border border-zinc-200 rounded px-2 py-0.5 text-[11px]">
+      <span className="text-zinc-500">{pin.prop}:</span>
+      <span className="text-zinc-800">{pin.value}</span>
+      {pin.strict && <Pin className="w-2.5 h-2.5 text-amber-600" />}
+    </span>
   );
 }
 

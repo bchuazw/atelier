@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import json
+import logging
+import re
 from typing import Literal
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
@@ -10,9 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from atelier_api.config import settings
 from atelier_api.db.models import Edge, Node, Project
 from atelier_api.db.session import get_session
-from atelier_api.pricing import project_total_cost_cents
-from atelier_api.sandbox.fetcher import fetch_page, save_html_as_seed
+from atelier_api.llm import client as llm
+from atelier_api.pricing import cost_cents_for_usage, project_total_cost_cents
+from atelier_api.sandbox.fetcher import USER_AGENT, fetch_page, save_html_as_seed
 from atelier_api.storage import storage
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -502,3 +509,251 @@ async def delete_project(project_id: str, session: AsyncSession = Depends(get_se
         except Exception as e:  # pragma: no cover — defensive
             failed.append(f"{nid}: {e}")
     return {"ok": True, "node_count": len(node_ids), "storage_cleaned": cleaned, "storage_failed": failed}
+
+
+# ---------------------------------------------------------------------------
+# /projects/extract-design
+#
+# "Match an existing site": fetch a URL, hand the HTML to Claude, and get back
+# (a) a one-line summary of the visual style, (b) a starter list of Style Pins
+# the user can promote into the new project's Brand Kit, and (c) a seed HTML
+# scaffold the user will then prompt-fork from. This collapses the prior
+# "screenshot the target site, hand-craft a 16KB seed" workflow into one click.
+#
+# Deliberately stateless this round: returns the structured payload but does
+# NOT bind it to a project. The dialog stages the seed_html + style_pins into
+# the existing CreateProjectIn flow on Submit. Cost-event persistence ties
+# in once the project is actually created in a future ticket.
+# ---------------------------------------------------------------------------
+
+
+class ExtractDesignIn(BaseModel):
+    url: str = Field(..., min_length=1, max_length=2048)
+
+    @field_validator("url")
+    @classmethod
+    def _http_only(cls, v: str) -> str:
+        v = v.strip()
+        if not re.match(r"^https?://", v, re.IGNORECASE):
+            raise ValueError("url must start with http:// or https://")
+        return v
+
+
+# System prompt for the extraction step. Cache-flagged because it's static
+# across calls — once a few users have hit the endpoint we get the cached
+# input rate on every subsequent extraction.
+EXTRACT_DESIGN_SYSTEM = [
+    {
+        "type": "text",
+        "text": (
+            "You are a senior brand/web design lead. Given the raw HTML of a real website, "
+            "extract its visual identity and produce a starter scaffold the user can fork from.\n\n"
+            "Output a SINGLE JSON object (no prose, no markdown fences) with EXACTLY these keys:\n"
+            "  - summary: ONE sentence capturing the visual style (palette mood + typography + tone). "
+            "Example: \"Warm minimal wellness — cream backgrounds, brass accents, Playfair serif headings.\"\n"
+            "  - style_pins: an array of 4-8 design constraints. Each entry is "
+            "{prop, value, kind, strict?}. `kind` is one of \"color\" | \"font\" | \"dimension\" | "
+            "\"enum\" | \"text\". Set strict=true on the 1-2 MOST defining tokens (the signature "
+            "primary color, the signature heading font); leave strict off for the rest. Always include "
+            "at least one color pin and at least one font pin when the source HTML supports it.\n"
+            "  - seed_html_scaffold: a self-contained HTML document (300-800 lines is plenty) that "
+            "uses the detected tokens — same nav/header pattern as the source, a generic content area "
+            "(hero, two or three feature blocks, footer) the user will customize via prompt-fork. "
+            "Inline all CSS in a single <style> block. Do NOT copy proprietary copy verbatim — write "
+            "neutral placeholder copy in the same tone. Use system-safe font fallbacks alongside the "
+            "detected fonts. No external script tags. No analytics. Force <meta charset=\"utf-8\">.\n\n"
+            "Rules:\n"
+            "1. Color values must be hex (#rrggbb or #rgb). Convert rgb()/named CSS colors to hex.\n"
+            "2. Font values are the family name only (e.g. \"Playfair Display\"), no quotes/weights.\n"
+            "3. Pin `prop` strings are short and human-readable: \"primary color\", \"heading font\", "
+            "\"body font\", \"accent color\", \"background color\", \"tone of voice\".\n"
+            "4. The seed_html_scaffold must be valid, self-contained HTML5. <!DOCTYPE html> required.\n"
+            "5. Return ONLY the JSON object. No leading/trailing prose. No code fences. Start with `{` "
+            "and end with `}`."
+        ),
+        "cache_control": {"type": "ephemeral"},
+    }
+]
+
+
+def _parse_extract_design_json(text: str) -> dict:
+    """Strict parse for the extract-design response. Strips a single
+    ```json``` fence if the model added one (mirrors `_parse_react_export_json`
+    in routes/nodes.py). Validates the four expected keys + that there's at
+    least one color pin and one font pin so downstream consumers can rely on
+    the shape."""
+    cleaned = text.strip()
+    fence = re.match(r"^```(?:json)?\s*(.*?)\s*```$", cleaned, re.DOTALL)
+    if fence:
+        cleaned = fence.group(1).strip()
+    payload = json.loads(cleaned)
+    if not isinstance(payload, dict):
+        raise ValueError("Top-level JSON must be an object")
+    for key in ("summary", "style_pins", "seed_html_scaffold"):
+        if key not in payload:
+            raise ValueError(f"Missing required key: {key}")
+    if not isinstance(payload["summary"], str) or not payload["summary"].strip():
+        raise ValueError("`summary` must be a non-empty string")
+    pins = payload["style_pins"]
+    if not isinstance(pins, list) or not pins:
+        raise ValueError("`style_pins` must be a non-empty array")
+    cleaned_pins: list[dict] = []
+    for p in pins:
+        if not isinstance(p, dict):
+            raise ValueError("Each style pin must be an object")
+        prop = (p.get("prop") or "").strip()
+        value = (p.get("value") or "").strip()
+        kind = p.get("kind") or "text"
+        if not prop or not value:
+            continue
+        if kind not in ("color", "dimension", "enum", "font", "text"):
+            kind = "text"
+        cleaned_pins.append(
+            {
+                "prop": prop,
+                "value": value,
+                "kind": kind,
+                "strict": bool(p.get("strict", False)),
+            }
+        )
+    if not any(p["kind"] == "color" for p in cleaned_pins):
+        raise ValueError("Need at least one color pin")
+    if not any(p["kind"] == "font" for p in cleaned_pins):
+        raise ValueError("Need at least one font pin")
+    if not isinstance(payload["seed_html_scaffold"], str) or "<html" not in payload["seed_html_scaffold"].lower():
+        raise ValueError("`seed_html_scaffold` must be a valid HTML document")
+    payload["style_pins"] = cleaned_pins[:12]
+    return payload
+
+
+@router.post("/extract-design")
+async def extract_design(body: ExtractDesignIn):
+    """Fetch a URL, ask Claude for design tokens + a seed HTML scaffold.
+
+    Stateless: doesn't write to the DB. The client stages the returned
+    `seed_html` + `style_pins` into the existing create-project payload so
+    the new project is born with the extracted brand pre-loaded.
+    """
+    # Step 1: fetch the source HTML. We use plain httpx (not the asset-rewriting
+    # `fetch_page`) because we only need the markup for analysis — the seed
+    # scaffold is generated fresh, so we never copy assets out of the source.
+    try:
+        async with httpx.AsyncClient(
+            headers={
+                "User-Agent": USER_AGENT,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+            timeout=httpx.Timeout(30.0, connect=10.0),
+            follow_redirects=True,
+        ) as client:
+            r = await client.get(body.url)
+            if r.status_code >= 400:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Source URL returned {r.status_code}. Check the URL and try again.",
+                )
+            # Prefer UTF-8 first, mirroring _decode_response in fetcher.py.
+            try:
+                html = r.content.decode("utf-8")
+            except UnicodeDecodeError:
+                html = r.text
+    except HTTPException:
+        raise
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=400, detail=f"Could not fetch URL: {e}")
+    except Exception as e:  # pragma: no cover — defensive
+        raise HTTPException(status_code=500, detail=f"Fetch failed: {e}")
+
+    if not html.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Source returned an empty document. The site may be a JS-heavy SPA that "
+            "renders client-side — try a static URL or use the Paste HTML mode.",
+        )
+
+    # Truncate at the same 60K char budget the React-export and fork prompts
+    # use. The model only needs structure + colors + typography; the tail of
+    # a long document rarely changes the visual read.
+    truncated = html[:60000]
+    user_msg = (
+        f"Extract the visual identity of this site and produce a starter scaffold. "
+        f"Source URL: {body.url}\n\n"
+        f"```html\n{truncated}\n```\n\n"
+        "Return JSON only."
+    )
+
+    # Step 2: call Sonnet. max_tokens=2000 is a tight budget that matches the
+    # spec's hint and keeps cold extraction time around 15-25s on a typical
+    # marketing page (similar Sonnet-rewrite latencies we see for /export/react).
+    try:
+        resp = await llm.call(
+            system=EXTRACT_DESIGN_SYSTEM,
+            user=user_msg,
+            model="sonnet",
+            max_tokens=2000,
+        )
+    except Exception as e:  # pragma: no cover — Anthropic upstream failure
+        raise HTTPException(status_code=500, detail=f"LLM call failed: {e}")
+
+    # Single-shot parse → one corrective re-prompt before giving up. Same
+    # pattern as `_generate_react_files` in routes/nodes.py.
+    parse_error: Exception | None = None
+    try:
+        parsed = _parse_extract_design_json(resp.text)
+    except (json.JSONDecodeError, ValueError) as e:
+        parse_error = e
+        retry_msg = (
+            "Your previous response was not valid JSON for the design-extraction schema. "
+            f"Error: {e}\n\nFirst 400 chars of what you sent:\n{resp.text[:400]}\n\n"
+            "Re-output ONE JSON object only with keys: summary, style_pins, seed_html_scaffold. "
+            "No prose, no markdown fences. Start with `{` and end with `}`. Make sure style_pins "
+            "includes at least one color pin and at least one font pin."
+        )
+        try:
+            resp_retry = await llm.call(
+                system=EXTRACT_DESIGN_SYSTEM,
+                user=retry_msg,
+                model="sonnet",
+                max_tokens=2000,
+            )
+            parsed = _parse_extract_design_json(resp_retry.text)
+            # Aggregate retry tokens into the original response so the cost
+            # number we return reflects what the user actually owes.
+            base = dict(resp.usage_dict or {})
+            extra = resp_retry.usage_dict or {}
+            for k in ("input", "output", "cache_read", "cache_creation"):
+                base[k] = (base.get(k) or 0) + (extra.get(k) or 0)
+            resp = resp_retry
+            # Use the merged usage for cost calculation. We can't mutate the
+            # dataclass property, so we keep a local instead.
+            usage_for_cost = base
+        except (json.JSONDecodeError, ValueError) as e2:
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"Model returned invalid JSON twice for design extraction. "
+                    f"First: {parse_error}. Retry: {e2}. Try a different URL or use Paste HTML."
+                ),
+            )
+        except Exception as e2:  # pragma: no cover — Anthropic upstream on retry
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"First call returned invalid JSON ({parse_error}); "
+                    f"corrective retry failed: {e2}."
+                ),
+            )
+    else:
+        usage_for_cost = resp.usage_dict
+
+    cost_cents = cost_cents_for_usage(usage_for_cost, resp.model)
+
+    return {
+        "summary": parsed["summary"],
+        "style_pins": parsed["style_pins"],
+        "seed_html": parsed["seed_html_scaffold"],
+        "model_used": resp.model,
+        "token_usage": usage_for_cost,
+        "cost_cents": cost_cents,
+    }

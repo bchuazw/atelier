@@ -336,6 +336,25 @@ export const api = {
     ),
   archiveProject: (projectId: string, archived: boolean) =>
     api.patchProject(projectId, { archived }),
+  // "Match an existing site": fetch the URL, ask Claude for a one-line read
+  // of its visual style + a starter list of Style Pins + a seed HTML scaffold.
+  // Stateless — does NOT create a project. The dialog stages the returned
+  // seed_html + style_pins into the existing createProject call on Submit.
+  // Typical latency 15-30s on a real marketing page (one Sonnet round-trip
+  // with up to 60K chars of source HTML). Throws 502 if the model returns
+  // bad JSON twice in a row.
+  extractDesign: (url: string) =>
+    request<{
+      summary: string;
+      style_pins: StylePin[];
+      seed_html: string;
+      model_used: string;
+      token_usage: Record<string, number>;
+      cost_cents: number;
+    }>(`/projects/extract-design`, {
+      method: "POST",
+      body: JSON.stringify({ url }),
+    }),
   fork: (
     parentId: string,
     prompt: string,
