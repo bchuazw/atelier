@@ -106,13 +106,24 @@ export default function EmptyState({ onNewProject }: { onNewProject: () => void 
     await reload(next);
   }
 
-  const activeProjects = projects.filter((p) => !p.archived);
+  // Test-name filter: drop projects whose names look like ad-hoc tests
+  // (a fresh-user beta tester said the public dashboard "reads as a debug
+  // environment" because of names like "prod-smoke-1777257513", "sdasad",
+  // "sse-test-…", "race-test-…"). Hide those by default — the user can
+  // expand "Show N archived" to see everything if they need to.
+  const TEST_NAME_RX = /^(prod-smoke|smoke|smoketest|sse-test|race-test|verify[-_]?strict|test|sdasad|debug)/i;
+  const isTestish = (p: ProjectDTO) => TEST_NAME_RX.test(p.name || "") || (p.name || "").trim().length === 0;
+  const activeProjects = projects.filter((p) => !p.archived && !isTestish(p));
+  const hiddenTestish = projects.filter((p) => !p.archived && isTestish(p));
   const archivedProjects = projects.filter((p) => p.archived);
   // We only know there *might* be archived projects when we've fetched them
   // at least once. Without that, hide the toggle so first-time users don't
   // see a control that does nothing. Once toggled on, keep showing it (with
   // count) so they can collapse back.
-  const showToggleRow = showArchived || archivedProjects.length > 0;
+  const showToggleRow = showArchived || archivedProjects.length > 0 || hiddenTestish.length > 0;
+  // When the toggle is "on" (archive-show mode), also surface hidden test
+  // projects since the user explicitly opted in to seeing the full list.
+  const allArchivedish = showArchived ? [...archivedProjects, ...hiddenTestish] : archivedProjects;
 
   return (
     <div className="w-full h-full flex items-center justify-center bg-stone-50 text-zinc-700">
@@ -152,8 +163,8 @@ export default function EmptyState({ onNewProject }: { onNewProject: () => void 
                   aria-pressed={showArchived}
                 >
                   {showArchived
-                    ? "Hide archived"
-                    : `Show ${archivedProjects.length} archived`}
+                    ? "Hide archived & test projects"
+                    : `Show ${archivedProjects.length + hiddenTestish.length} hidden`}
                 </button>
               )}
             </div>
@@ -170,13 +181,13 @@ export default function EmptyState({ onNewProject }: { onNewProject: () => void 
               ))}
             </div>
 
-            {showArchived && archivedProjects.length > 0 && (
+            {showArchived && allArchivedish.length > 0 && (
               <div className="mt-6">
                 <h3 className="text-xs uppercase tracking-wide text-zinc-500 mb-2">
-                  Archived
+                  Archived &amp; test projects
                 </h3>
                 <div className="space-y-1 opacity-80">
-                  {archivedProjects.map((p) => (
+                  {allArchivedish.map((p) => (
                     <ArchivedProjectRow
                       key={p.id}
                       project={p}

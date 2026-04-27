@@ -149,8 +149,13 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
           )}
         </div>
 
-        <div className="flex items-center gap-2 text-sm">
-          <div className="text-[11px] text-zinc-500 mr-2">
+        {/* Right action cluster: horizontally-scrollable on narrow screens
+            so phone users can still reach Critics / Context / Refresh /
+            Delete / New Project. A merge-tester reported these were clipped
+            past the viewport edge with no fallback at <640px. The scroll
+            stays subtle on desktop (no overflow when there's room). */}
+        <div className="flex items-center gap-2 text-sm overflow-x-auto max-w-[calc(100vw-200px)] sm:max-w-none scrollbar-thin">
+          <div className="text-[11px] text-zinc-500 mr-2 flex-shrink-0">
             {nodes.length} {nodes.length === 1 ? "node" : "nodes"}
           </div>
           {sessionCostUsd > 0 && (
