@@ -26,6 +26,7 @@ import httpx
 from mcp.server.fastmcp import FastMCP
 
 from .client import AtelierClient, api_base, web_base
+from .diff import compute_style_diff, summarize
 
 log = logging.getLogger(__name__)
 
@@ -286,42 +287,80 @@ def build_server() -> FastMCP:
     async def atelier_compare(a_node_id: str, b_node_id: str) -> dict[str, Any]:
         """Compute a structured diff between two variants.
 
-        DEFERRED: Atelier's `StyleDiff[]` engine (categories: copy,
-        structure, tokens, typography, palette, spacing, effects, layout)
-        is implemented in TypeScript on the web client and is not exposed
-        by the API. Porting it to Python is out of scope for this MCP
-        server's MVP, so this tool returns a pointer to the canvas's
-        visual Compare view instead of a structured diff.
+        Runs the Atelier `StyleDiff` engine (Python port of the web app's
+        diff lens) over both variants' rendered HTML and returns a flat
+        list of property-level changes plus per-category counts.
+
+        Categories: copy, tokens, structure, typography, palette,
+        spacing, effects, layout.
 
         Returns:
           {
-            message: str,           # "Open the canvas and click Compare"
-            web_url: str,           # canvas URL the user should open
             a_node_id, b_node_id,
-            a_sandbox_url, b_sandbox_url,
+            diff: [                       # flat StyleDiff list
+              {selector, property, before, after, category}, ...
+            ],
+            summary: {copy: N, tokens: N, structure: N, typography: N,
+                      palette: N, spacing: N, effects: N, layout: N},
+            web_compare_url: str,         # canvas URL — for visual side-by-side
           }
+
+        On fetch failure for either variant, returns
+          {error: str, a_node_id, b_node_id}
+        instead of raising — agents handle dicts more reliably than
+        exceptions.
         """
+        # Fetch both variants' rendered HTML. We deliberately catch
+        # per-call so the error message can name which side failed.
         try:
-            a = await client.get_node(a_node_id)
-            b = await client.get_node(b_node_id)
+            a_export = await client.export_node(a_node_id)
         except httpx.HTTPStatusError as e:
-            return {"error": _http_error_message(e)}
+            return {
+                "error": f"Could not fetch variant A: {_http_error_message(e)}",
+                "a_node_id": a_node_id,
+                "b_node_id": b_node_id,
+            }
         except httpx.HTTPError as e:
-            return {"error": f"HTTP error talking to Atelier API: {e}"}
+            return {
+                "error": f"HTTP error fetching variant A: {e}",
+                "a_node_id": a_node_id,
+                "b_node_id": b_node_id,
+            }
+        try:
+            b_export = await client.export_node(b_node_id)
+        except httpx.HTTPStatusError as e:
+            return {
+                "error": f"Could not fetch variant B: {_http_error_message(e)}",
+                "a_node_id": a_node_id,
+                "b_node_id": b_node_id,
+            }
+        except httpx.HTTPError as e:
+            return {
+                "error": f"HTTP error fetching variant B: {e}",
+                "a_node_id": a_node_id,
+                "b_node_id": b_node_id,
+            }
+
+        a_html = a_export.get("html", "") or ""
+        b_html = b_export.get("html", "") or ""
+        if not a_html or not b_html:
+            return {
+                "error": "One or both variants returned empty HTML; cannot diff.",
+                "a_node_id": a_node_id,
+                "b_node_id": b_node_id,
+            }
+
+        diff = compute_style_diff(a_html, b_html)
         return {
-            "message": (
-                "Structured StyleDiff is computed client-side in the Atelier web app and is not "
-                "yet exposed via the API. Open the canvas, multi-select both variants, and click "
-                "Compare to see the visual diff (categories: copy, structure, tokens, typography, "
-                "palette, spacing, effects, layout)."
-            ),
-            "web_url": web_base(),
             "a_node_id": a_node_id,
             "b_node_id": b_node_id,
-            "a_title": a.get("title"),
-            "b_title": b.get("title"),
-            "a_sandbox_url": a.get("sandbox_url"),
-            "b_sandbox_url": b.get("sandbox_url"),
+            "a_title": a_export.get("title"),
+            "b_title": b_export.get("title"),
+            "diff": diff,
+            "summary": summarize(diff),
+            # Keep the canvas URL so the agent can still tell the user
+            # "for visual side-by-side, open <url> and click Compare".
+            "web_compare_url": web_base(),
         }
 
     # ── Publish + URL helpers ──────────────────────────────────────
