@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Sparkles, Loader2, Target, ChevronUp, ChevronDown, History } from "lucide-react";
 import clsx from "clsx";
 import { api } from "@/lib/api";
@@ -90,6 +90,7 @@ export default function PromptBar() {
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
   const [recentPrompts, setRecentPrompts] = useState<string[]>([]);
+  const inFlightRef = useRef(false);
 
   // Hydrate recent prompts when the active project changes — and clear the
   // stale prompt textarea. Six beta testers in a row reported "the prompt
@@ -117,8 +118,18 @@ export default function PromptBar() {
 
   if (!project) return null;
 
+  // Synchronous re-entry guard. `disabled={running}` on the button is the
+  // intent, but React state updates batch — three rapid clicks fire the
+  // submit handler three times before the disabled prop has had a chance
+  // to flip. An adversarial QA pass committed three forks against one
+  // intended click. The ref check rejects any second/third call inside
+  // the same JS turn before any work happens.
+  const submitInFlight = inFlightRef;
+
   async function submit() {
+    if (submitInFlight.current) return;
     if (!target || !prompt.trim()) return;
+    submitInFlight.current = true;
     setRunning(true);
     setError(null);
     const trimmed = prompt.trim();
@@ -149,6 +160,7 @@ export default function PromptBar() {
       }
     } finally {
       setRunning(false);
+      submitInFlight.current = false;
     }
   }
 

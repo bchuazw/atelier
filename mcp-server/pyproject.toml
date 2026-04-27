@@ -1,0 +1,20 @@
+[project]
+name = "atelier-mcp-server"
+version = "0.1.0"
+description = "Model Context Protocol server that exposes Atelier (frontend-design exploration tool) to Claude Code's builder agent."
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.2.0",
+    "httpx>=0.27.0",
+]
+
+[project.scripts]
+atelier-mcp-server = "mcp_server.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mcp_server*"]

@@ -215,6 +215,17 @@ export default function ExportDialog() {
 
   const node = nodes.find((n) => n.id === exportNodeId) || null;
 
+  // Auto-close when the target node disappears from the store (e.g., the
+  // user just deleted the variant the dialog is anchored to). An adversarial
+  // QA pass found that the dialog would otherwise stay mounted, fire the
+  // export fetch against a now-missing node, and surface the raw
+  // `{"detail":"Node not found"}` envelope inline.
+  useEffect(() => {
+    if (exportDialogOpen && exportNodeId && !node) {
+      closeExport();
+    }
+  }, [exportDialogOpen, exportNodeId, node, closeExport]);
+
   useEffect(() => {
     if (!exportDialogOpen || !exportNodeId) {
       setData(null);

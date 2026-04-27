@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -43,14 +43,29 @@ class StylePin(BaseModel):
 
 
 class CreateProjectIn(BaseModel):
-    name: str
-    seed_url: str | None = None
-    seed_html: str | None = None  # paste-HTML alternative to seed_url
+    # Server-side input bounds — earlier the API trusted the client
+    # entirely, so direct POSTs with empty/whitespace/5000-char names
+    # all returned 200. An adversarial QA pass found this; tightening to
+    # 1-200 chars after strip (matches the in-route check on PATCH name).
+    name: str = Field(..., min_length=1, max_length=200)
+    seed_url: str | None = Field(default=None, max_length=2048)
+    seed_html: str | None = Field(default=None, max_length=500_000)  # paste-HTML alternative to seed_url
     # Optional Brand Kit pins pre-loaded from the New Project dialog. Stored
     # in project.settings["style_pins"] using the same shape patch_project
     # writes, so the rest of the pipeline (fork prompt builder, ContextPanel,
     # validator) sees no schema difference between project-create and patch.
     style_pins: list[StylePin] | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _name_not_blank(cls, v: str) -> str:
+        # Pydantic's `strip_whitespace=True` doesn't re-check min_length
+        # against the stripped value, so a whitespace-only name slipped
+        # through. Explicit strip + non-empty check.
+        v = v.strip()
+        if not v:
+            raise ValueError("name must contain non-whitespace characters")
+        return v
 
 
 class ProjectOut(BaseModel):

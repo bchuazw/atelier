@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X, Sparkles, Loader2, Swords } from "lucide-react";
 import clsx from "clsx";
 import { api } from "@/lib/api";
@@ -34,6 +34,9 @@ export default function ForkDialog() {
   const [shootout, setShootout] = useState(false);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Synchronous re-entry guard so rapid clicks can't fire multiple
+  // parallel forks before React state has propagated `disabled={running}`.
+  const submitInFlight = useRef(false);
 
   // Reset every time the dialog opens. Earlier we only reset on close,
   // which left a stale prompt visible if the dialog was reopened without
@@ -53,6 +56,7 @@ export default function ForkDialog() {
   const parent = nodes.find((x) => x.id === forkParentId);
 
   async function submit() {
+    if (submitInFlight.current) return;
     if (!prompt.trim() || !forkParentId) return;
     // Cost-fan guard. A FAANG-eng beta tester reported "fired a 3-variant
     // generation against my will. Three Sonnet calls I didn't ask for."
@@ -71,6 +75,7 @@ export default function ForkDialog() {
       );
       if (!ok) return;
     }
+    submitInFlight.current = true;
     setRunning(true);
     setError(null);
     try {
@@ -108,6 +113,7 @@ export default function ForkDialog() {
       setError(detailMatch?.[1] ?? raw);
     } finally {
       setRunning(false);
+      submitInFlight.current = false;
     }
   }
 
