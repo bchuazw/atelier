@@ -166,6 +166,43 @@ def _strict_color_pins_violated(html: str, style_pins: list[dict] | None) -> lis
     return violations
 
 
+def _missing_strict_text_items(html: str, style_pins: list[dict] | None) -> list[str]:
+    """Return the list of named items from strict `kind == "text"` pins that
+    are absent from the rendered HTML. The pin's `value` is treated as a
+    CSV of named items (e.g., "Back Squat, Pull-Ups, Deadlift") OR a single
+    item — each comma-separated trimmed token must appear (case-insensitive
+    substring) in the HTML.
+
+    A real user (Opus dropping 6 of 9 exercises silently when forking a
+    workout dashboard) motivated this: strict text pins double as a content-
+    preservation guarantee, parallel to the color-hex check above. Only
+    `strict == True` pins fire here; soft text pins still rely on the
+    prompt's MUST language.
+    """
+    if not style_pins:
+        return []
+    lowered = html.lower()
+    missing: list[str] = []
+    seen: set[str] = set()
+    for p in style_pins:
+        if p.get("kind") != "text" or not p.get("strict"):
+            continue
+        raw = (p.get("value") or "").strip()
+        if not raw:
+            continue
+        items = [tok.strip() for tok in raw.split(",")]
+        for item in items:
+            if not item:
+                continue
+            key = item.lower()
+            if key in seen:
+                continue
+            if key not in lowered:
+                seen.add(key)
+                missing.append(item)
+    return missing
+
+
 async def _project_cost_status(
     session: AsyncSession, project_id: str
 ) -> tuple[int, int | None]:
@@ -238,6 +275,31 @@ async def _generate_one(
                 html, meta, resp = html_retry, meta_retry, resp_retry
         except Exception:
             log.exception("strict-pin re-prompt failed; keeping original generation")
+
+    # Content-preservation pass for strict TEXT pins. A real user hit this:
+    # Opus silently dropped 6 of 9 named exercises when forking a workout
+    # dashboard. The retry mirrors the color-hex flow above — single shot,
+    # fall back to original if the retry still drops items.
+    missing_items = _missing_strict_text_items(html, style_pins)
+    if missing_items:
+        missing_list = ", ".join(missing_items)
+        retry_msg = (
+            f"{context_block}{pins_block}INSTRUCTION:\n{prompt}\n\n"
+            "Your previous output dropped these required items: "
+            f"{missing_list}. Re-render the SAME page including all of them. "
+            "Output HTML only.\n\n"
+            f"PARENT_HTML (truncated if long):\n```html\n{parent_html[:60000]}\n```\n\n"
+            "Now produce the corrected HTML document followed by ---META--- and the JSON meta."
+        )
+        try:
+            resp_retry = await llm.call(
+                system=FORK_SYSTEM, user=retry_msg, model=model_choice, max_tokens=8192
+            )
+            html_retry, meta_retry = _parse_llm_output(resp_retry.text)
+            if not _missing_strict_text_items(html_retry, style_pins):
+                html, meta, resp = html_retry, meta_retry, resp_retry
+        except Exception:
+            log.exception("strict text-pin re-prompt failed; keeping original generation")
 
     return html, meta, resp
 

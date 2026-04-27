@@ -42,6 +42,65 @@ export default function App() {
       });
   }, []);
 
+  // Project deep-links. `?project=<id>` auto-loads a project on first mount
+  // (so the MCP server's `atelier_get_project_url` can return a real link
+  // and users can paste a URL straight to a teammate). Bad/expired ids
+  // surface a transient toast and fall through to the home dashboard.
+  useEffect(() => {
+    let cancelled = false;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const pid = params.get("project");
+      if (!pid) return;
+      api
+        .getTree(pid)
+        .then((tree) => {
+          if (cancelled) return;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          useUI.getState().setTree(tree.project as any, tree.nodes, tree.edges);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          useUI.getState().showError("Project not found");
+          // Strip the bad id so refresh / share links don't keep retrying.
+          try {
+            const url = new URL(window.location.href);
+            url.searchParams.delete("project");
+            window.history.replaceState({}, "", url.toString());
+          } catch {
+            /* noop — best effort */
+          }
+        });
+    } catch {
+      /* noop — URL parsing should never throw, but defensive */
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Keep `?project=<id>` in sync with the loaded project. When a user opens
+  // a project from EmptyState (or any code path that calls `setTree`), we
+  // push the id into the URL via replaceState so a refresh / paste returns
+  // to the same canvas. When the project clears (back to home), drop the
+  // param so the URL stays clean.
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      const current = url.searchParams.get("project");
+      const pid = project?.id ?? null;
+      if (pid && current !== pid) {
+        url.searchParams.set("project", pid);
+        window.history.replaceState({}, "", url.toString());
+      } else if (!pid && current) {
+        url.searchParams.delete("project");
+        window.history.replaceState({}, "", url.toString());
+      }
+    } catch {
+      /* noop — URL parsing should never throw */
+    }
+  }, [project?.id]);
+
   // Global keyboard shortcuts. Require Shift on letter keys so a stray
   // bare-letter keystroke while panning the canvas can't open dialogs
   // back-to-back (a designer ran into this, pressing C/F/B in rapid

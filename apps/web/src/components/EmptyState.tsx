@@ -1,6 +1,6 @@
 import { Palette, MousePointerClick, Trash2, Archive, ArchiveRestore } from "lucide-react";
 import { useEffect, useState } from "react";
-import { api, type ProjectDTO } from "@/lib/api";
+import { api, getWorkspaceId, type ProjectDTO } from "@/lib/api";
 import { useUI } from "@/lib/store";
 
 function formatRelative(iso: string | null | undefined): string {
@@ -25,11 +25,25 @@ export default function EmptyState({ onNewProject }: { onNewProject: () => void 
   // returns archived rows alongside active ones, then the UI splits them
   // into two sections.
   const [showArchived, setShowArchived] = useState(false);
+  // Per-visitor workspace id — read from localStorage on mount and passed
+  // to every list call so each browser only sees its own projects (plus
+  // legacy untagged ones, which the server keeps unfiltered for back-compat).
+  const [workspaceId] = useState<string>(() => getWorkspaceId());
+  // Escape hatch: when true, drop the workspace filter and show every
+  // project in the deployment for this visit. Useful for single-user devs
+  // pulling shared content; reset every time the dashboard remounts.
+  const [showAllWorkspaces, setShowAllWorkspaces] = useState(false);
 
-  async function reload(includeArchived = showArchived) {
+  async function reload(
+    includeArchived = showArchived,
+    showAll = showAllWorkspaces,
+  ) {
     setLoading(true);
     try {
-      const list = await api.listProjects(includeArchived);
+      const list = await api.listProjects(
+        includeArchived,
+        showAll ? undefined : workspaceId,
+      );
       setProjects(list);
     } catch {
       setProjects([]);
@@ -45,7 +59,7 @@ export default function EmptyState({ onNewProject }: { onNewProject: () => void 
     // tester archived a project and had no UI path to restore it because
     // the toggle never rendered (chicken/egg: count was 0 because we
     // hadn't fetched archived yet).
-    void reload(true);
+    void reload(true, showAllWorkspaces);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -107,7 +121,13 @@ export default function EmptyState({ onNewProject }: { onNewProject: () => void 
   async function toggleShowArchived() {
     const next = !showArchived;
     setShowArchived(next);
-    await reload(next);
+    await reload(next, showAllWorkspaces);
+  }
+
+  async function toggleShowAllWorkspaces() {
+    const next = !showAllWorkspaces;
+    setShowAllWorkspaces(next);
+    await reload(showArchived, next);
   }
 
   // Test-name filter: drop projects whose names look like ad-hoc tests
@@ -158,7 +178,7 @@ export default function EmptyState({ onNewProject }: { onNewProject: () => void 
 
         {!loading && activeProjects.length > 0 && (
           <nav aria-label="Recent projects">
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-1.5">
               <h2 className="text-xs uppercase tracking-wide text-zinc-600">Recent projects</h2>
               {showToggleRow && (
                 <button
@@ -171,6 +191,20 @@ export default function EmptyState({ onNewProject }: { onNewProject: () => void 
                     : `Show ${archivedProjects.length + hiddenTestish.length} hidden`}
                 </button>
               )}
+            </div>
+            <div className="flex items-center justify-between mb-2 text-[10px] text-zinc-500">
+              <span title={`Full workspace id: ${workspaceId}`}>
+                Workspace: <span className="font-mono">{workspaceId.slice(0, 8)}</span>
+              </span>
+              <button
+                onClick={toggleShowAllWorkspaces}
+                className="text-zinc-500 hover:text-zinc-900 underline-offset-2 hover:underline"
+                aria-pressed={showAllWorkspaces}
+              >
+                {showAllWorkspaces
+                  ? "filter to my workspace"
+                  : "see all projects (everyone)"}
+              </button>
             </div>
             <div className="space-y-1">
               {activeProjects.map((p) => (

@@ -420,7 +420,16 @@ export default function ContextPanel() {
                       <input
                         value={p.value}
                         onChange={(e) => updatePin(i, { value: e.target.value })}
-                        placeholder="value (e.g. 800 or confident, human)"
+                        placeholder={
+                          p.strict
+                            ? "Back Squat, Pull-Ups, Deadlift"
+                            : "value (e.g. 800 or confident, human)"
+                        }
+                        title={
+                          p.strict
+                            ? "Comma-separated list of items the AI must preserve verbatim. e.g., 'Back Squat, Pull-Ups, Deadlift'"
+                            : undefined
+                        }
                         className="flex-1 bg-white border border-zinc-200 rounded px-2 py-1 text-[12px] font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/40"
                         disabled={saving}
                       />

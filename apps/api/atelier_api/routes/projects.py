@@ -55,6 +55,15 @@ class CreateProjectIn(BaseModel):
     # writes, so the rest of the pipeline (fork prompt builder, ContextPanel,
     # validator) sees no schema difference between project-create and patch.
     style_pins: list[StylePin] | None = None
+    # Per-visitor workspace tag. Single-tenant deployments share one DB so
+    # without this every visitor saw every other visitor's projects (a beta
+    # tester said the dashboard "reads as a debug environment"). The client
+    # generates a UUID on first load, stores it in localStorage, and sends
+    # it on every project-create. Persisted into project.settings so the
+    # `list_projects` endpoint can filter on it. Optional for backwards
+    # compatibility — legacy projects without the tag still appear in
+    # everyone's list (no orphans).
+    workspace_id: str | None = Field(default=None, max_length=128)
 
     @field_validator("name")
     @classmethod
@@ -132,6 +141,12 @@ async def create_project(body: CreateProjectIn, session: AsyncSession = Depends(
         ][:12]
         if cleaned_pins:
             project.settings = {**(project.settings or {}), "style_pins": cleaned_pins}
+    # Tag this project with the visitor's workspace_id (when provided). The
+    # `list_projects` filter respects it so each visitor only sees their own
+    # projects + legacy untagged ones. Stored under settings.workspace_id.
+    ws_id = (body.workspace_id or "").strip()
+    if ws_id:
+        project.settings = {**(project.settings or {}), "workspace_id": ws_id}
     session.add(project)
     await session.flush()
 
@@ -184,6 +199,7 @@ async def create_project(body: CreateProjectIn, session: AsyncSession = Depends(
 @router.get("", response_model=list[ProjectOut])
 async def list_projects(
     include_archived: bool = False,
+    workspace: str | None = None,
     session: AsyncSession = Depends(get_session),
 ):
     from sqlalchemy import func as sql_func
@@ -205,6 +221,7 @@ async def list_projects(
     else:
         meta_by_id = {}
 
+    ws_filter = (workspace or "").strip() or None
     out: list[ProjectOut] = []
     for p in rows:
         node_count, last_activity = meta_by_id.get(p.id, (0, None))
@@ -213,6 +230,15 @@ async def list_projects(
         archived = bool((p.settings or {}).get("archived", False))
         if archived and not include_archived:
             continue
+        # Workspace filter: if `?workspace=<id>` was provided, only return
+        # projects tagged with that id OR legacy projects with no tag at
+        # all (so we never orphan pre-workspace-tag projects). When the
+        # query param is absent the original behaviour (return everything)
+        # is preserved.
+        if ws_filter is not None:
+            project_ws = (p.settings or {}).get("workspace_id")
+            if project_ws and project_ws != ws_filter:
+                continue
         out.append(
             ProjectOut(
                 id=p.id,

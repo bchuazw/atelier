@@ -227,11 +227,53 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
+// Per-visitor workspace tag. Stored in localStorage so a single browser is
+// stable across tabs/sessions; generated on first read so we never block a
+// page load on a user action. Used to scope `list_projects` and stamp every
+// new project so single-tenant deployments don't show every visitor's work
+// to every other visitor.
+const WORKSPACE_KEY = "atelier:workspace_id";
+
+function genUUID(): string {
+  // Prefer the platform UUID; fall back to a timestamp+random combo on
+  // older browsers (no native crypto.randomUUID).
+  const c = (typeof crypto !== "undefined" ? crypto : undefined) as
+    | (Crypto & { randomUUID?: () => string })
+    | undefined;
+  if (c && typeof c.randomUUID === "function") return c.randomUUID();
+  return (
+    Date.now().toString(36) +
+    "-" +
+    Math.random().toString(36).slice(2, 10) +
+    Math.random().toString(36).slice(2, 10)
+  );
+}
+
+export function getWorkspaceId(): string {
+  try {
+    let id = localStorage.getItem(WORKSPACE_KEY);
+    if (!id) {
+      id = genUUID();
+      localStorage.setItem(WORKSPACE_KEY, id);
+    }
+    return id;
+  } catch {
+    // localStorage may throw in private mode / sandboxed iframes — fall
+    // back to a per-session id so the rest of the app still works (no
+    // filtering at worst).
+    return "anon";
+  }
+}
+
 export const api = {
-  listProjects: (includeArchived = false) =>
-    request<ProjectDTO[]>(
-      `/projects${includeArchived ? "?include_archived=true" : ""}`
-    ),
+  listProjects: (includeArchived = false, workspaceId?: string) => {
+    const params: string[] = [];
+    if (includeArchived) params.push("include_archived=true");
+    if (workspaceId) params.push(`workspace=${encodeURIComponent(workspaceId)}`);
+    return request<ProjectDTO[]>(
+      `/projects${params.length ? `?${params.join("&")}` : ""}`
+    );
+  },
   createProject: (
     body:
       | {
@@ -241,16 +283,24 @@ export const api = {
           // Optional Brand Kit pins, pre-loaded from the New Project dialog.
           // When omitted (the existing fast path), no pins are saved.
           style_pins?: StylePin[];
+          // Per-visitor workspace tag — auto-injected from localStorage so
+          // single-tenant deployments scope projects per browser.
+          workspace_id?: string;
         }
       | string,
     seed_url?: string
-  ) =>
-    request<ProjectDTO>("/projects", {
+  ) => {
+    const payload =
+      typeof body === "string" ? { name: body, seed_url } : { ...body };
+    // Auto-inject workspace_id when the caller didn't pass one explicitly.
+    if (typeof payload === "object" && !("workspace_id" in payload && payload.workspace_id)) {
+      (payload as { workspace_id?: string }).workspace_id = getWorkspaceId();
+    }
+    return request<ProjectDTO>("/projects", {
       method: "POST",
-      body: JSON.stringify(
-        typeof body === "string" ? { name: body, seed_url } : body
-      ),
-    }),
+      body: JSON.stringify(payload),
+    });
+  },
   getTree: (projectId: string, includeArchived = false) =>
     request<TreeDTO>(
       `/projects/${projectId}/tree${includeArchived ? "?include_archived=true" : ""}`
