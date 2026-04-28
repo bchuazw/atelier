@@ -15,6 +15,9 @@ import {
   Trash2,
   RotateCw,
   Pencil,
+  Share2,
+  Check,
+  Link2,
 } from "lucide-react";
 
 export type VariantNodeData = {
@@ -64,6 +67,50 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
   useEffect(() => {
     setDraftTitle(node.title || "");
   }, [node.title]);
+
+  // One-click share. The Export dialog already exposes a Publish + Copy URL
+  // flow, but it takes 3 clicks to share with a stakeholder. This button
+  // collapses publish-if-needed → copy URL → toast into one tap right on
+  // the card. Fetches the existing published state on mount so a previously
+  // shared variant shows the filled icon immediately.
+  type SharedState = { slug: string; public_url: string; published_at: string };
+  const [shared, setShared] = useState<SharedState | null>(null);
+  const [sharing, setSharing] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    if (node.type === "seed" || node.build_status !== "ready") return;
+    api
+      .getPublishedState(node.id)
+      .then((s) => {
+        if (alive) setShared(s);
+      })
+      .catch(() => {
+        // best-effort — never block the card on a publish-state lookup
+      });
+    return () => {
+      alive = false;
+    };
+  }, [node.id, node.type, node.build_status]);
+
+  async function shareVariant(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (sharing) return;
+    setSharing(true);
+    try {
+      const state = shared || (await api.publishNode(node.id));
+      if (!shared) setShared(state);
+      await navigator.clipboard.writeText(state.public_url);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 1500);
+    } catch (err) {
+      useUI
+        .getState()
+        .showError(`Couldn't share variant: ${(err as Error).message}`);
+    } finally {
+      setSharing(false);
+    }
+  }
 
   async function setAsCheckpoint(e: React.MouseEvent) {
     e.stopPropagation();
@@ -409,6 +456,40 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
           >
             <Download className="w-3.5 h-3.5" />
           </IconButton>
+          {/* Seeds aren't standalone HTML pages worth sharing publicly — only
+              variants get the share button. Skipping it on seeds also avoids
+              creating an orphan published-tree directory if a user clicks it
+              before forking anything. */}
+          {node.type !== "seed" && (
+            <button
+              onClick={shareVariant}
+              disabled={node.build_status !== "ready" || sharing}
+              title={
+                shareCopied
+                  ? "Public URL copied!"
+                  : shared
+                  ? `Shared at ${shared.public_url} — click to copy`
+                  : "Publish a public URL and copy it (one-click share)"
+              }
+              aria-label={shared ? "Copy shared URL" : "Publish and share"}
+              className={clsx(
+                "flex items-center justify-center w-7 h-7 rounded disabled:opacity-40 transition-colors",
+                shareCopied
+                  ? "bg-emerald-100 text-emerald-700"
+                  : shared
+                  ? "bg-cyan-50 text-cyan-700 hover:bg-cyan-100"
+                  : "bg-zinc-50 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
+              )}
+            >
+              {shareCopied ? (
+                <Check className="w-3.5 h-3.5" />
+              ) : shared ? (
+                <Link2 className="w-3.5 h-3.5" />
+              ) : (
+                <Share2 className="w-3.5 h-3.5" />
+              )}
+            </button>
+          )}
           {node.sandbox_url && (
             <a
               href={node.sandbox_url}
