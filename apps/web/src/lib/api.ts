@@ -215,14 +215,63 @@ export type TemplateManifestEntry = {
   vibe?: string;
 };
 
+/** Carries the HTTP status + parsed detail so callers can branch on
+ *  `err.status === 402` without re-parsing the message string. Falls back
+ *  to status=0 for network failures (DNS, offline, CORS, server cold start
+ *  exceeding the fetch timeout). */
+export class ApiError extends Error {
+  status: number;
+  detail: string | null;
+  constructor(message: string, status: number, detail: string | null) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+/** Best-effort extract of `detail` from a FastAPI error body. Falls back
+ *  to the first 200 chars of raw text so non-JSON errors (HTML 502 from
+ *  Render's reverse proxy when the API is sleeping) still surface
+ *  something readable. */
+function extractDetail(text: string): string {
+  try {
+    const j = JSON.parse(text);
+    if (typeof j?.detail === "string") return j.detail;
+    if (Array.isArray(j?.detail)) {
+      // Pydantic 422 shape: [{loc, msg, type}, ...]. Return first msg.
+      const first = j.detail[0];
+      if (first?.msg) return String(first.msg);
+    }
+    if (typeof j?.detail === "object" && j.detail !== null) return JSON.stringify(j.detail);
+  } catch {
+    // not JSON
+  }
+  return text.length > 200 ? text.slice(0, 200) + "…" : text;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      headers: { "Content-Type": "application/json" },
+      ...init,
+    });
+  } catch (e) {
+    // Network-level failure (offline, DNS, CORS, fetch aborted). The
+    // browser's TypeError "Failed to fetch" is useless to a user; replace
+    // with actionable copy that names the most common cause (Render free
+    // tier sleeping) and what to do.
+    throw new ApiError(
+      "Atelier's API is unreachable. The server may be waking from cold start — try again in 20-30s.",
+      0,
+      (e as Error)?.message ?? null
+    );
+  }
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`${res.status} ${res.statusText}: ${text}`);
+    const detail = extractDetail(text);
+    throw new ApiError(detail, res.status, detail);
   }
   return (await res.json()) as T;
 }

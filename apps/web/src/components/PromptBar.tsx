@@ -158,23 +158,19 @@ export default function PromptBar() {
       saveRecentPrompt(project!.id, trimmed);
       setRecentPrompts(loadRecentPrompts(project!.id));
       setPrompt("");
-    } catch (e: any) {
-      const raw = String(e?.message || "Fork failed");
-      // Special-case the cost-cap 402 from the sync /fork path. Without
-      // this branch the user saw the raw `"402 Payment Required: {\"detail\":...}"`
-      // envelope inline — ugly + leaks server detail. Route to the same
-      // persistent banner the SSE path uses so the experience is consistent.
-      if (raw.includes("402") && raw.toLowerCase().includes("cost cap")) {
+    } catch (e: unknown) {
+      // Cost-cap 402 routes to the persistent banner (same path the SSE
+      // fork uses) so the experience is consistent across entry points.
+      // The new ApiError carries .status so we don't string-match anymore.
+      const err = e as { status?: number; message?: string };
+      if (err?.status === 402) {
         const proj = useUI.getState().project;
         useUI.getState().showCostCapBanner({
           total_cost_cents: proj?.total_cost_cents ?? 0,
           cost_cap_cents: proj?.cost_cap_cents ?? 0,
         });
       } else {
-        // Strip the JSON envelope when present so users see the human
-        // detail and not the wire format.
-        const detailMatch = raw.match(/"detail"\s*:\s*"([^"]+)"/);
-        setError(detailMatch?.[1] ?? raw);
+        setError(err?.message || "Fork failed");
       }
     } finally {
       setRunning(false);

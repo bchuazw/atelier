@@ -96,13 +96,12 @@ export default function ForkDialog() {
         openViewer();
       }
       closeFork();
-    } catch (e: any) {
-      const raw = String(e?.message || "Fork failed");
-      // Cost-cap 402 was previously dumped as the raw JSON envelope inline
-      // — a production beta tester saw `402 : {"detail":"..."}` instead of
-      // the polished CostCapBanner. Route to the same banner the SSE +
-      // PromptBar paths use, and close the dialog so the user can act on it.
-      if (raw.includes("402") && raw.toLowerCase().includes("cost cap")) {
+    } catch (e: unknown) {
+      // Cost-cap 402 routes to the persistent banner (same path the SSE +
+      // PromptBar paths use). ApiError.status replaces the old string
+      // matching against the wire-format response envelope.
+      const err = e as { status?: number; message?: string };
+      if (err?.status === 402) {
         const proj = useUI.getState().project;
         useUI.getState().showCostCapBanner({
           total_cost_cents: proj?.total_cost_cents ?? 0,
@@ -111,10 +110,7 @@ export default function ForkDialog() {
         closeFork();
         return;
       }
-      // Strip the JSON envelope when present so users see the human detail
-      // and not the wire format.
-      const detailMatch = raw.match(/"detail"\s*:\s*"([^"]+)"/);
-      setError(detailMatch?.[1] ?? raw);
+      setError(err?.message || "Fork failed");
     } finally {
       setRunning(false);
       submitInFlight.current = false;
