@@ -7,6 +7,7 @@ import {
   BookOpen,
   Anchor,
   ArchiveRestore,
+  Archive,
   MessageSquareQuote,
   Gem,
   Columns,
@@ -71,6 +72,27 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
     if (!ok) return;
     await api.deleteProject(project.id);
     setTree(null, [], []);
+  }
+
+  async function archive() {
+    if (!project) return;
+    const ok = await useUI.getState().showConfirm({
+      title: "Archive project?",
+      message:
+        `"${project.name}" will be hidden from your recent-projects list. ` +
+        `The project itself, every variant, and every published share URL stay live — ` +
+        `you can restore from the dashboard's "Show hidden" toggle anytime.`,
+      confirmLabel: "Archive",
+      cancelLabel: "Cancel",
+    });
+    if (!ok) return;
+    try {
+      await api.archiveProject(project.id, true);
+      // Drop back to the dashboard so the user sees the immediate effect.
+      setTree(null, [], []);
+    } catch (e) {
+      useUI.getState().showError(`Couldn't archive: ${(e as Error).message}`);
+    }
   }
 
   async function clearCheckpoint() {
@@ -258,9 +280,17 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
                 <RefreshCw className="w-4 h-4" />
               </button>
               <button
+                onClick={archive}
+                className="p-1.5 rounded hover:bg-zinc-100 text-zinc-500"
+                title="Archive project (hide from dashboard, keeps data + share URLs live)"
+                aria-label="Archive project"
+              >
+                <Archive className="w-4 h-4" />
+              </button>
+              <button
                 onClick={del}
                 className="p-1.5 rounded hover:bg-zinc-100 text-rose-400"
-                title="Delete project"
+                title="Delete project permanently"
                 aria-label="Delete project"
               >
                 <Trash2 className="w-4 h-4" />

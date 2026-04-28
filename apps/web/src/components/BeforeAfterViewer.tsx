@@ -12,7 +12,14 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { useUI } from "@/lib/store";
+import { api } from "@/lib/api";
 import { computeStyleDiff, extractColors, type StyleDiff } from "@/lib/diffStyles";
+
+type DiffSummary = {
+  summary: string;
+  bullets: string[];
+  cost_cents: number;
+};
 
 type Viewport = "desktop" | "tablet" | "mobile";
 const VIEWPORT_WIDTH: Record<Viewport, number> = {
@@ -37,6 +44,12 @@ export default function BeforeAfterViewer() {
   const [showDiff, setShowDiff] = useState(false);
   const [diff, setDiff] = useState<StyleDiff[]>([]);
   const [diffLoading, setDiffLoading] = useState(false);
+  // Plain-English diff summary. Cached per (a, b) pair so flipping
+  // showDiff off and back on doesn't rerun the LLM call.
+  const [summary, setSummary] = useState<DiffSummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const summaryCacheKey = useRef<string | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [stageSize, setStageSize] = useState({ w: 1200, h: 800 });
@@ -70,6 +83,41 @@ export default function BeforeAfterViewer() {
       cancelled = true;
     };
   }, [showDiff, nodeA?.sandbox_url, nodeB?.sandbox_url]);
+
+  // Plain-English summary fires once per (a, b, len(diff)) tuple after the
+  // structured diff lands. Skipped when diff is empty (nothing to summarize)
+  // and when the same pair was already summarized this session (cache key).
+  useEffect(() => {
+    if (!showDiff || diffLoading || diff.length === 0) return;
+    if (!nodeA || !nodeB) return;
+    const key = `${nodeA.id}|${nodeB.id}|${diff.length}`;
+    if (summaryCacheKey.current === key) return;
+    summaryCacheKey.current = key;
+    let cancelled = false;
+    setSummary(null);
+    setSummaryError(null);
+    setSummaryLoading(true);
+    api
+      .summarizeDiff(diff, nodeA.title, nodeB.title)
+      .then((res) => {
+        if (cancelled) return;
+        setSummary({
+          summary: res.summary,
+          bullets: res.bullets,
+          cost_cents: res.cost_cents,
+        });
+      })
+      .catch((e: Error) => {
+        if (cancelled) return;
+        setSummaryError(e.message || "Couldn't summarize");
+      })
+      .finally(() => {
+        if (!cancelled) setSummaryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showDiff, diffLoading, diff, nodeA, nodeB]);
 
   useEffect(() => {
     if (!viewerOpen) return;
@@ -381,7 +429,7 @@ export default function BeforeAfterViewer() {
           </div>
         )}
       </div>
-      {showDiff && <DiffPanel diff={diff} loading={diffLoading} nodeATitle={nodeA?.title || "A"} nodeBTitle={nodeB?.title || "B"} />}
+      {showDiff && <DiffPanel diff={diff} loading={diffLoading} nodeATitle={nodeA?.title || "A"} nodeBTitle={nodeB?.title || "B"} summary={summary} summaryLoading={summaryLoading} summaryError={summaryError} />}
       </div>
 
       {/* Bottom status */}
@@ -547,11 +595,17 @@ function DiffPanel({
   loading,
   nodeATitle,
   nodeBTitle,
+  summary,
+  summaryLoading,
+  summaryError,
 }: {
   diff: StyleDiff[];
   loading: boolean;
   nodeATitle: string;
   nodeBTitle: string;
+  summary: DiffSummary | null;
+  summaryLoading: boolean;
+  summaryError: string | null;
 }) {
   // Group rows by category for the rendered list.
   const grouped = useMemo(() => {
@@ -584,20 +638,63 @@ function DiffPanel({
           typography, palette, spacing, effects, and a few layout props.)
         </div>
       ) : (
-        <div className="p-3 space-y-3">
-          {grouped.map(([cat, rows]) => (
-            <div key={cat}>
-              <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium mb-1.5">
-                {CATEGORY_LABEL[cat]} · {rows.length}
-              </div>
-              <div className="space-y-1.5">
-                {rows.map((d, i) => (
-                  <DiffRow key={`${d.selector}|${d.property}|${i}`} d={d} cat={cat} />
-                ))}
-              </div>
+        <>
+          {/* Plain-English summary panel — appears at top while the
+              structured diff renders below. The structured-diff power
+              users still need is unaffected; non-technical stakeholders
+              get a TL;DR they can quote in a Slack message. */}
+          <div className="px-4 py-3 border-b border-zinc-200 bg-amber-50/40">
+            <div className="text-[10px] uppercase tracking-wider text-amber-700 font-medium mb-1.5 flex items-center gap-1.5">
+              <span>TL;DR</span>
+              {summaryLoading && (
+                <span className="text-[10px] text-zinc-500 normal-case tracking-normal">
+                  · summarizing…
+                </span>
+              )}
             </div>
-          ))}
-        </div>
+            {summaryError ? (
+              <div className="text-[12px] text-rose-600 leading-snug">
+                Couldn't summarize: {summaryError}
+              </div>
+            ) : summary ? (
+              <>
+                <p className="text-[13px] text-zinc-800 leading-snug font-medium mb-2">
+                  {summary.summary}
+                </p>
+                {summary.bullets.length > 0 && (
+                  <ul className="space-y-1 list-disc list-outside ml-4 marker:text-amber-400">
+                    {summary.bullets.map((b, i) => (
+                      <li key={i} className="text-[12px] text-zinc-700 leading-snug">
+                        {b}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <div className="text-[9px] text-zinc-400 mt-2 font-mono">
+                  Haiku · ~${(summary.cost_cents / 100).toFixed(3)}
+                </div>
+              </>
+            ) : (
+              <div className="text-[12px] text-zinc-500 italic">
+                Reading the {diff.length} changes…
+              </div>
+            )}
+          </div>
+          <div className="p-3 space-y-3">
+            {grouped.map(([cat, rows]) => (
+              <div key={cat}>
+                <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium mb-1.5">
+                  {CATEGORY_LABEL[cat]} · {rows.length}
+                </div>
+                <div className="space-y-1.5">
+                  {rows.map((d, i) => (
+                    <DiffRow key={`${d.selector}|${d.property}|${i}`} d={d} cat={cat} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

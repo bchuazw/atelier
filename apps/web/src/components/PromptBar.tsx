@@ -116,6 +116,24 @@ export default function PromptBar() {
     return nodes[nodes.length - 1];
   }, [selectedNodeId, nodes, project]);
 
+  // Contextual onboarding tip — replaces a single static "drag to combine"
+  // line that veteran users glossed over. The tip text steps through the
+  // happy path automatically as the user takes actions, no localStorage
+  // dismissal needed: variant count + champion count *are* the state.
+  // After the user has both forked AND starred at least once, fall back
+  // to the advanced drag-to-combine tip the original UI showed everyone.
+  const championedIds = useUI((s) => s.championedIds);
+  const variantCount = nodes.filter((n) => n.type === "variant").length;
+  const tipText = useMemo(() => {
+    if (variantCount === 0) {
+      return "👋 First variant: pick a chip below or type your own change. Claude will fork your seed.";
+    }
+    if (championedIds.length === 0) {
+      return "★ Star the variants you like — they show up in Showcase view for stakeholder review.";
+    }
+    return "Tip: drag any node onto another to combine their styles with Opus.";
+  }, [variantCount, championedIds.length]);
+
   if (!project) return null;
 
   // Synchronous re-entry guard. `disabled={running}` on the button is the
@@ -289,8 +307,8 @@ export default function PromptBar() {
               </div>
             )}
 
-            <div className="mt-2 px-0.5 text-[10px] text-zinc-400">
-              Tip: drag any node onto another to combine their styles with Opus.
+            <div className="mt-2 px-0.5 text-[10px] text-zinc-500">
+              {tipText}
             </div>
           </div>
         )}

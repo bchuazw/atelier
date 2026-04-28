@@ -355,6 +355,31 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ url }),
     }),
+  // Plain-English summary of a structured StyleDiff. Backend wraps the
+  // diff in a Haiku call (~$0.001) and returns one sentence + 3-6 bullets.
+  // Caller is responsible for caching by (a_id, b_id) to avoid re-spending
+  // on Compare-viewer reopens.
+  summarizeDiff: (
+    diff: Array<{
+      selector: string;
+      property: string;
+      before: string | null;
+      after: string | null;
+      category: string;
+    }>,
+    a_title?: string | null,
+    b_title?: string | null
+  ) =>
+    request<{
+      summary: string;
+      bullets: string[];
+      model_used: string;
+      cost_cents: number;
+      category_counts: Record<string, number>;
+    }>(`/diff/summarize`, {
+      method: "POST",
+      body: JSON.stringify({ diff, a_title, b_title }),
+    }),
   fork: (
     parentId: string,
     prompt: string,
