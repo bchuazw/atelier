@@ -11,6 +11,7 @@ import {
   Gem,
   Columns,
   X,
+  Star,
 } from "lucide-react";
 import clsx from "clsx";
 import { api } from "@/lib/api";
@@ -32,6 +33,9 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
     includeArchived,
     setIncludeArchived,
     sessionUsage,
+    championedIds,
+    showcaseMode,
+    setShowcaseMode,
   } = useUI();
 
   const targetId = useMemo(() => {
@@ -186,6 +190,33 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
               className="flex items-center gap-1 px-2.5 py-1 rounded bg-cyan-500 hover:bg-cyan-400 text-black font-medium text-xs"
             >
               Open Before/After
+            </button>
+          )}
+          {project && championedIds.length > 0 && (
+            <button
+              onClick={() => setShowcaseMode(!showcaseMode)}
+              className={clsx(
+                "flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium",
+                showcaseMode
+                  ? "bg-amber-500 text-black hover:bg-amber-400"
+                  : "bg-amber-100 text-amber-700 hover:bg-amber-200"
+              )}
+              title={
+                showcaseMode
+                  ? `Exit Showcase — return to the full canvas`
+                  : `Showcase view — hide everything except your ${championedIds.length} starred variant${championedIds.length === 1 ? "" : "s"}`
+              }
+            >
+              <Star
+                className="w-3.5 h-3.5"
+                fill={showcaseMode ? "currentColor" : "none"}
+              />
+              {showcaseMode ? `Showcase (${championedIds.length})` : `Showcase`}
+              {!showcaseMode && (
+                <span className="ml-0.5 px-1 rounded bg-amber-200/60 text-amber-800 text-[10px] font-mono">
+                  {championedIds.length}
+                </span>
+              )}
             </button>
           )}
           {project && (

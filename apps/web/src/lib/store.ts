@@ -97,6 +97,12 @@ type UIState = {
   // head — subsequent enqueues wait their turn so back-to-back showConfirm
   // calls don't stack overlapping modals.
   dialogQueue: DialogRequest[];
+  // Per-project "boss-presentation" mode: user stars 2-3 finalist variants
+  // → toggling Showcase hides everything else and re-grids the survivors.
+  // Persisted to localStorage scoped by project id (single-user workspace,
+  // no multi-device sync needed yet). Hydrated in setTree.
+  championedIds: string[];
+  showcaseMode: boolean;
 
   // actions
   setTree: (project: ProjectDTO | null, nodes: NodeDTO[], edges: EdgeDTO[]) => void;
@@ -172,7 +178,39 @@ type UIState = {
   }) => Promise<void>;
   // Pop the head of dialogQueue and resolve its promise. Used by AppDialog.
   resolveDialog: (id: string, ok: boolean) => void;
+  // Champion star + Showcase view. Toggling a champion star persists the
+  // change to localStorage immediately (so a refresh keeps the user's
+  // selection). Showcase mode is in-memory only — it's a per-session view
+  // mode, not a property of the project.
+  toggleChampion: (nodeId: string) => void;
+  setShowcaseMode: (on: boolean) => void;
 };
+
+// Storage key namespaced by project id so champions are scoped per project.
+// Returns an empty array on parse error — never throws so a corrupt key
+// can't lock the user out of the canvas.
+const CHAMPIONS_KEY = (projectId: string) => `atelier:champions:${projectId}`;
+function loadChampions(projectId: string | null): string[] {
+  if (!projectId) return [];
+  try {
+    const raw = localStorage.getItem(CHAMPIONS_KEY(projectId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+function persistChampions(projectId: string | null, ids: string[]) {
+  if (!projectId) return;
+  try {
+    if (ids.length === 0) localStorage.removeItem(CHAMPIONS_KEY(projectId));
+    else localStorage.setItem(CHAMPIONS_KEY(projectId), JSON.stringify(ids));
+  } catch {
+    // localStorage can throw in private mode / quota — silently degrade
+    // to in-memory state. Champions still work for the current session.
+  }
+}
 
 export const useUI = create<UIState>((set) => ({
   project: null,
@@ -204,8 +242,22 @@ export const useUI = create<UIState>((set) => ({
   errorToast: null,
   costCapBanner: null,
   dialogQueue: [],
+  championedIds: [],
+  showcaseMode: false,
 
-  setTree: (project, nodes, edges) => set({ project, nodes, edges }),
+  setTree: (project, nodes, edges) =>
+    set({
+      project,
+      nodes,
+      edges,
+      // Hydrate champions for the new project, drop any ids that no longer
+      // exist in the tree (variants since deleted), and exit showcase mode
+      // on project switch so a stale "0 starred" view never appears.
+      championedIds: loadChampions(project?.id ?? null).filter((id) =>
+        nodes.some((n) => n.id === id)
+      ),
+      showcaseMode: false,
+    }),
   setProject: (project) => set({ project }),
   setSelected: (id) => set({ selectedNodeId: id }),
   // All open* actions close any other open dialog first. A beta tester
@@ -423,4 +475,17 @@ export const useUI = create<UIState>((set) => ({
       else target.resolve();
       return { dialogQueue: s.dialogQueue.filter((d) => d.id !== id) };
     }),
+  toggleChampion: (nodeId) =>
+    set((s) => {
+      const next = s.championedIds.includes(nodeId)
+        ? s.championedIds.filter((id) => id !== nodeId)
+        : [...s.championedIds, nodeId];
+      persistChampions(s.project?.id ?? null, next);
+      // Auto-exit showcase mode when the last champion is unstarred so the
+      // user isn't left staring at a blank canvas.
+      return next.length === 0
+        ? { championedIds: next, showcaseMode: false }
+        : { championedIds: next };
+    }),
+  setShowcaseMode: (on) => set({ showcaseMode: on }),
 }));

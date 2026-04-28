@@ -18,6 +18,7 @@ import {
   Share2,
   Check,
   Link2,
+  Star,
 } from "lucide-react";
 
 export type VariantNodeData = {
@@ -55,11 +56,14 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
     setTree,
     setSelected,
     includeArchived,
+    championedIds,
+    toggleChampion,
   } = useUI();
 
   const isA = compare.a === node.id;
   const isB = compare.b === node.id;
   const isCheckpoint = !!node.is_checkpoint;
+  const isChampion = championedIds.includes(node.id);
 
   // Inline rename state — same pattern as project name in TopBar.
   const [renaming, setRenaming] = useState(false);
@@ -456,6 +460,35 @@ export default function VariantNode({ data, selected }: NodeProps<VariantNodeDat
           >
             <Download className="w-3.5 h-3.5" />
           </IconButton>
+          {/* Champion star — mark this variant as a finalist to show your
+              boss/stakeholder. The TopBar's Showcase toggle hides every
+              non-starred node. Skipped on seeds since "the seed isn't a
+              candidate". */}
+          {node.type !== "seed" && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleChampion(node.id);
+              }}
+              title={
+                isChampion
+                  ? "Starred — included in Showcase view. Click to unstar."
+                  : "Star this variant — adds it to the Showcase view for stakeholder review"
+              }
+              aria-label={isChampion ? "Unstar variant" : "Star variant"}
+              className={clsx(
+                "flex items-center justify-center w-7 h-7 rounded transition-colors",
+                isChampion
+                  ? "bg-amber-100 text-amber-600 hover:bg-amber-200"
+                  : "bg-zinc-50 text-zinc-600 hover:bg-zinc-100 hover:text-amber-500"
+              )}
+            >
+              <Star
+                className="w-3.5 h-3.5"
+                fill={isChampion ? "currentColor" : "none"}
+              />
+            </button>
+          )}
           {/* Seeds aren't standalone HTML pages worth sharing publicly — only
               variants get the share button. Skipping it on seeds also avoids
               creating an orphan published-tree directory if a user clicks it

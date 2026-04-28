@@ -55,6 +55,8 @@ function CanvasInner() {
     openMergeDialog,
     recentlyMergedId,
     markRecentlyMerged,
+    showcaseMode,
+    championedIds,
   } = useUI();
   const rf = useReactFlow();
   // Re-fit the view whenever the number of nodes changes (i.e. a fork or
@@ -86,16 +88,52 @@ function CanvasInner() {
     return () => window.cancelAnimationFrame(handle);
   }, [nodes.length, rf]);
 
+  // Re-fit whenever the user toggles Showcase mode — the visible node count
+  // and positions both change but the source `nodes` array doesn't, so the
+  // count-change effect above wouldn't fire on its own. Independent effect
+  // means entering AND exiting both produce a smooth recenter.
+  useEffect(() => {
+    const handle = window.requestAnimationFrame(() => {
+      try {
+        rf.fitView({
+          padding: FIT_VIEW_PADDING_FOR_PROMPTBAR,
+          duration: 600,
+          minZoom: 0.3,
+          maxZoom: 1.0,
+        });
+      } catch {
+        // ReactFlow not yet ready — skip silently.
+      }
+    });
+    return () => window.cancelAnimationFrame(handle);
+  }, [showcaseMode, rf]);
+
+  // Showcase mode collapses the canvas to just the user's starred finalists,
+  // re-laid-out as a clean horizontal row. The original tree positions are
+  // left untouched in the store — exiting Showcase restores the full view.
+  // 320px stride matches CHILD_X_STEP from autoLayout so the spacing reads
+  // as native to the rest of the canvas.
+  const visibleStoreNodes = useMemo(() => {
+    if (!showcaseMode) return nodes;
+    const championSet = new Set(championedIds);
+    return nodes.filter((n) => championSet.has(n.id));
+  }, [nodes, showcaseMode, championedIds]);
+
   const rfNodes = useMemo<RFNode<VariantNodeData>[]>(
     () =>
-      nodes.map((n) => ({
+      visibleStoreNodes.map((n, i) => ({
         id: n.id,
         type: "variant",
-        position: n.position,
+        position: showcaseMode
+          ? { x: i * 320, y: 0 }
+          : n.position,
         data: { node: n },
         // Pass visual hints via className so VariantNode.tsx can style them.
-        className:
-          mergeDrag?.source_id === n.id
+        // Drag-to-combine hints are suppressed in Showcase mode — combining
+        // doesn't apply to a finalists-only view.
+        className: showcaseMode
+          ? undefined
+          : mergeDrag?.source_id === n.id
             ? "atelier-merge-source"
             : mergeDrag?.hover_target_id === n.id
             ? "atelier-merge-target"
@@ -103,7 +141,7 @@ function CanvasInner() {
             ? "atelier-recently-merged"
             : undefined,
       })),
-    [nodes, mergeDrag, recentlyMergedId]
+    [visibleStoreNodes, showcaseMode, mergeDrag, recentlyMergedId]
   );
 
   const rfEdges = useMemo<RFEdge[]>(() => {
@@ -113,7 +151,11 @@ function CanvasInner() {
     const sourceCount = new Map<string, number>();
     for (const e of edges) sourceCount.set(e.from, (sourceCount.get(e.from) ?? 0) + 1);
 
-    return edges.map((e) => {
+    // In Showcase mode hide every edge — finalists are presented as a clean
+    // gallery without parent/sibling lineage. The lineage info isn't useful
+    // when only the survivors are visible anyway.
+    const sourceEdges = showcaseMode ? [] : edges;
+    return sourceEdges.map((e) => {
       const isContribution = e.type === "contribution";
       const isMerge = e.type === "merge";
       const siblingsCount = sourceCount.get(e.from) ?? 1;
@@ -143,7 +185,7 @@ function CanvasInner() {
         labelBgPadding: [4, 2],
       };
     });
-  }, [edges]);
+  }, [edges, showcaseMode]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
