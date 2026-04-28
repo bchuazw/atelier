@@ -238,13 +238,16 @@ async def list_projects(
         if archived and not include_archived:
             continue
         # Workspace filter: if `?workspace=<id>` was provided, only return
-        # projects tagged with that id OR legacy projects with no tag at
-        # all (so we never orphan pre-workspace-tag projects). When the
-        # query param is absent the original behaviour (return everything)
-        # is preserved.
+        # projects whose tag matches exactly. Pre-commercial behaviour also
+        # returned untagged legacy projects to every workspace — that was
+        # a hackathon-era convenience that leaked other users' work into
+        # every fresh signup's recents list. Now strict: untagged projects
+        # are accessible by direct URL only and never appear in any
+        # workspace's listing. Admin/MCP callers omit the param entirely
+        # and still see everything.
         if ws_filter is not None:
             project_ws = (p.settings or {}).get("workspace_id")
-            if project_ws and project_ws != ws_filter:
+            if project_ws != ws_filter:
                 continue
         out.append(
             ProjectOut(
