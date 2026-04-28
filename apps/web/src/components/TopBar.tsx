@@ -12,9 +12,11 @@ import {
   Columns,
   X,
   Star,
+  ChevronDown,
+  Loader2,
 } from "lucide-react";
 import clsx from "clsx";
-import { api } from "@/lib/api";
+import { api, getWorkspaceId, type ProjectDTO } from "@/lib/api";
 import { useUI } from "@/lib/store";
 
 export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
@@ -366,8 +368,10 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
   );
 }
 
-/** Inline-editable project name. Click to edit, Enter / blur to save,
- *  Escape to cancel. Optimistic update via PATCH /projects/:id { name }. */
+/** Inline-editable project name with a chevron-triggered switcher dropdown.
+ *  Click the name → rename. Click the chevron → dropdown of recent projects
+ *  + a "Browse all" link back to the EmptyState dashboard. Loading the
+ *  list is deferred to first dropdown open so the topbar mount stays cheap. */
 function ProjectNameInline({
   name,
   projectId,
@@ -377,13 +381,77 @@ function ProjectNameInline({
   projectId: string;
   seedUrl: string | null | undefined;
 }) {
-  const { setTree, project, includeArchived } = useUI();
+  const { setTree, includeArchived } = useUI();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(name);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [switcherList, setSwitcherList] = useState<ProjectDTO[] | null>(null);
+  const [switcherLoading, setSwitcherLoading] = useState(false);
+  const [switcherError, setSwitcherError] = useState<string | null>(null);
 
   useEffect(() => {
     setDraft(name);
   }, [name]);
+
+  // Click-outside / Esc close for the switcher dropdown. Mirrors the
+  // existing AppDialog Esc-capture pattern (Esc bubbles up from the
+  // topbar so capture-phase isn't needed here).
+  useEffect(() => {
+    if (!switcherOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && !t.closest("[data-project-switcher]")) setSwitcherOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSwitcherOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [switcherOpen]);
+
+  async function openSwitcher() {
+    setSwitcherOpen((prev) => !prev);
+    if (switcherList || switcherLoading) return;
+    setSwitcherLoading(true);
+    setSwitcherError(null);
+    try {
+      const list = await api.listProjects(false, getWorkspaceId());
+      // Sort newest first, then current project last (it's already loaded
+      // so it's the least-useful row). Cap at 12 — beyond that we suggest
+      // Browse all to avoid a wall-of-projects dropdown.
+      const sorted = [...list].sort((a, b) => {
+        if (a.id === projectId) return 1;
+        if (b.id === projectId) return -1;
+        return (b.created_at || "").localeCompare(a.created_at || "");
+      });
+      setSwitcherList(sorted.slice(0, 12));
+    } catch (e) {
+      setSwitcherError((e as Error).message || "Failed to load projects");
+    } finally {
+      setSwitcherLoading(false);
+    }
+  }
+
+  async function loadProject(pid: string) {
+    setSwitcherOpen(false);
+    if (pid === projectId) return;
+    try {
+      const tree = await api.getTree(pid, includeArchived);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setTree(tree.project as any, tree.nodes, tree.edges);
+    } catch (e) {
+      useUI.getState().showError(`Couldn't load project: ${(e as Error).message}`);
+    }
+  }
+
+  function browseAll() {
+    setSwitcherOpen(false);
+    setTree(null, [], []);
+  }
 
   async function commit() {
     const next = draft.trim();
@@ -396,6 +464,7 @@ function ProjectNameInline({
       await api.patchProject(projectId, { name: next });
       // Refresh tree so the store's project.name updates everywhere.
       const tree = await api.getTree(projectId, includeArchived);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       setTree(tree.project as any, tree.nodes, tree.edges);
     } catch (e) {
       useUI.getState().showError(`Rename failed: ${(e as Error).message}`);
@@ -427,7 +496,7 @@ function ProjectNameInline({
   }
 
   return (
-    <>
+    <span className="relative inline-flex items-center gap-1" data-project-switcher>
       <span className="text-zinc-500">Project:</span>{" "}
       <button
         type="button"
@@ -437,9 +506,97 @@ function ProjectNameInline({
       >
         {name}
       </button>
+      <button
+        type="button"
+        onClick={openSwitcher}
+        title="Switch to another project"
+        aria-label="Switch project"
+        aria-expanded={switcherOpen}
+        className={clsx(
+          "p-0.5 rounded hover:bg-zinc-100 text-zinc-500 hover:text-zinc-900 transition-colors",
+          switcherOpen && "bg-zinc-100 text-zinc-900"
+        )}
+      >
+        <ChevronDown className="w-3.5 h-3.5" />
+      </button>
       {seedUrl && (
         <span className="text-zinc-500 text-[11px] ml-2 font-mono">{seedUrl}</span>
       )}
-    </>
+      {switcherOpen && (
+        <div
+          className="absolute top-full left-0 mt-1.5 z-30 w-[320px] bg-white border border-zinc-200 rounded-lg shadow-xl overflow-hidden"
+          data-project-switcher
+        >
+          <div className="px-3 py-2 border-b border-zinc-100 text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
+            Recent projects
+          </div>
+          <div className="max-h-[320px] overflow-y-auto">
+            {switcherLoading && (
+              <div className="px-3 py-4 flex items-center gap-2 text-xs text-zinc-500">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Loading…
+              </div>
+            )}
+            {switcherError && (
+              <div className="px-3 py-3 text-xs text-rose-600">
+                {switcherError}
+              </div>
+            )}
+            {switcherList && switcherList.length === 0 && (
+              <div className="px-3 py-4 text-xs text-zinc-500">
+                No other projects yet.
+              </div>
+            )}
+            {switcherList?.map((p) => {
+              const isCurrent = p.id === projectId;
+              const cost = (p.total_cost_cents ?? 0) / 100;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => loadProject(p.id)}
+                  disabled={isCurrent}
+                  className={clsx(
+                    "w-full text-left px-3 py-2 border-b border-zinc-50 last:border-b-0 transition-colors",
+                    isCurrent
+                      ? "bg-amber-50 cursor-default"
+                      : "hover:bg-stone-50 cursor-pointer"
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[13px] font-medium text-zinc-900 truncate">
+                      {p.name}
+                    </span>
+                    {isCurrent && (
+                      <span className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-200 text-amber-800 flex-shrink-0">
+                        Current
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px] text-zinc-500 mt-0.5 font-mono">
+                    {typeof p.node_count === "number" && (
+                      <span>{p.node_count} nodes</span>
+                    )}
+                    {cost > 0 && <span>~${cost.toFixed(2)}</span>}
+                    {p.created_at && (
+                      <span className="truncate">
+                        {new Date(p.created_at).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            onClick={browseAll}
+            className="w-full px-3 py-2 text-[11px] font-medium text-zinc-700 bg-stone-50 hover:bg-stone-100 border-t border-zinc-100 text-left"
+          >
+            Browse all projects →
+          </button>
+        </div>
+      )}
+    </span>
   );
 }
