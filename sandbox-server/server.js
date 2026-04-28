@@ -89,24 +89,43 @@ function isSafePath(requested, root) {
 // payload is keyed by the iframe's src URL, so multiple variants on the
 // same page resize independently.
 const HEIGHT_REPORTER = `<script>(function(){
-  function h(){
+  // Measure where the last visible content actually ends, NOT body.scrollHeight.
+  // Many landing-page templates set \`body { min-height: 100vh }\` which makes
+  // body expand to fill whatever iframe height we give it — measuring that
+  // directly creates a feedback loop where the reported height = the iframe
+  // height. Walking body's children and taking the max of their bounding-rect
+  // bottoms gives "where the user perceives the page to end" regardless of
+  // body's CSS-driven size.
+  function measure(){
+    var max = 0;
+    if (!document.body) return 0;
+    var walk = function(el){
+      try {
+        var r = el.getBoundingClientRect();
+        if (r.height > 0 && r.bottom > max) max = r.bottom;
+      } catch(e) {}
+      for (var i = 0; i < el.children.length; i++) walk(el.children[i]);
+    };
+    for (var i = 0; i < document.body.children.length; i++) walk(document.body.children[i]);
+    // Add a tiny breathing margin so absolute-positioned shadows / outlines
+    // on the bottom-most element aren't visually clipped.
+    return Math.ceil(max) + 8;
+  }
+  function report(){
     try {
-      var v = Math.max(
-        document.body ? document.body.scrollHeight : 0,
-        document.documentElement ? document.documentElement.scrollHeight : 0
-      );
+      var v = measure();
       if (v > 0 && parent !== window) parent.postMessage({type:'atelier:height',height:v}, '*');
     } catch(e) {}
   }
-  if (document.readyState === 'complete') h();
-  else window.addEventListener('load', h);
-  window.addEventListener('resize', h);
+  if (document.readyState === 'complete') report();
+  else window.addEventListener('load', report);
+  window.addEventListener('resize', report);
   // Re-report after late-loading fonts/images settle. Two staggered ticks
   // catch most cases without spamming the parent.
-  setTimeout(h, 200);
-  setTimeout(h, 1000);
+  setTimeout(report, 200);
+  setTimeout(report, 1000);
   if (window.ResizeObserver && document.body) {
-    try { new ResizeObserver(h).observe(document.body); } catch(e) {}
+    try { new ResizeObserver(report).observe(document.body); } catch(e) {}
   }
 })();</script>`;
 
