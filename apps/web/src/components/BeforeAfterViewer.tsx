@@ -28,10 +28,14 @@ const VIEWPORT_WIDTH: Record<Viewport, number> = {
   mobile: 390,
 };
 
-// Each iframe renders its page at the chosen viewport width + this height
-// (most landing pages fit in 2000px; we give headroom and let users scroll
-// inside the iframe if needed).
-const IFRAME_HEIGHT = 2000;
+// Fallback iframe height used until the variant page reports its real
+// content height via postMessage from the height-reporter script the
+// sandbox-server injects. Most landing pages settle in under 2000px;
+// once the message lands we shrink (or grow) to the actual content.
+const IFRAME_HEIGHT_FALLBACK = 2000;
+// Floor so ultra-short pages (e.g. a near-empty seed) don't render as
+// a useless 80px sliver. Stakeholders should still see something.
+const IFRAME_HEIGHT_MIN = 600;
 
 type Mode = "side" | "split" | "overlay";
 
@@ -50,6 +54,12 @@ export default function BeforeAfterViewer() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const summaryCacheKey = useRef<string | null>(null);
+  // Reported iframe heights, keyed by sandbox URL. The sandbox-server
+  // injects a postMessage'ing script into every HTML response; we listen
+  // here and resize each PagePanel to its actual content height — no
+  // more trailing empty cream space when a variant is shorter than the
+  // 2000px iframe fallback.
+  const [iframeHeights, setIframeHeights] = useState<Record<string, number>>({});
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [stageSize, setStageSize] = useState({ w: 1200, h: 800 });
@@ -83,6 +93,32 @@ export default function BeforeAfterViewer() {
       cancelled = true;
     };
   }, [showDiff, nodeA?.sandbox_url, nodeB?.sandbox_url]);
+
+  // Listen for height reports from the iframed variant pages. Each
+  // event.source is the iframe's window — we map it back to the iframe's
+  // src URL so we know which PagePanel to resize. Pages can re-report on
+  // resize (font/image load), so we always take the latest value.
+  useEffect(() => {
+    if (!viewerOpen) return;
+    function onMsg(e: MessageEvent) {
+      const data = e.data as { type?: string; height?: number } | undefined;
+      if (!data || data.type !== "atelier:height" || typeof data.height !== "number") return;
+      // Resolve the source iframe → src URL. Walk all iframes on the page
+      // and match contentWindow against the message source. (We can't read
+      // the iframe's URL directly from a cross-origin message event.)
+      const all = Array.from(document.querySelectorAll("iframe")) as HTMLIFrameElement[];
+      const match = all.find((el) => el.contentWindow === e.source);
+      if (!match || !match.src) return;
+      // Round to integer px and clamp lower bound so a transient 0 from
+      // a not-yet-rendered page doesn't collapse the iframe.
+      const next = Math.max(IFRAME_HEIGHT_MIN, Math.round(data.height));
+      setIframeHeights((prev) =>
+        prev[match.src] === next ? prev : { ...prev, [match.src]: next }
+      );
+    }
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, [viewerOpen]);
 
   // Plain-English summary fires once per (a, b, len(diff)) tuple after the
   // structured diff lands. Skipped when diff is empty (nothing to summarize)
@@ -180,20 +216,31 @@ export default function BeforeAfterViewer() {
 
   const widthPx = VIEWPORT_WIDTH[viewport];
 
+  // Each panel's actual height is the value reported by its iframe (via
+  // postMessage from the height-reporter script). Until the first message
+  // lands we fall back to a 2000px guess. The TALLER of the two drives
+  // the height-bound on the side-by-side scale calculation so neither
+  // pane overflows the stage.
+  const heightAReported = nodeA?.sandbox_url ? iframeHeights[nodeA.sandbox_url] : undefined;
+  const heightBReported = nodeB?.sandbox_url ? iframeHeights[nodeB.sandbox_url] : undefined;
+  const heightA = heightAReported ?? IFRAME_HEIGHT_FALLBACK;
+  const heightB = heightBReported ?? IFRAME_HEIGHT_FALLBACK;
+  const tallestPane = Math.max(heightA, heightB);
+
   // Compute the scale for side-by-side: we want both pages to fit the stage
-  // without cropping, with a small gap between them. Height is also bounded
-  // so the iframe's rendered height doesn't exceed the stage.
+  // without cropping, with a small gap between them. Height is bounded by
+  // the tallest pane's reported content height — short pages no longer
+  // get scaled down to fit a 2000px assumption that doesn't apply to them.
   const GAP_PX = 24;
   const PAD_PX = 32;
   const availableW = Math.max(200, stageSize.w - PAD_PX);
   const availableH = Math.max(300, stageSize.h - PAD_PX);
   const sideScale = Math.min(
     (availableW - GAP_PX) / 2 / widthPx,
-    availableH / IFRAME_HEIGHT,
+    availableH / tallestPane,
     1
   );
   const scaledW = Math.round(widthPx * sideScale);
-  const scaledH = Math.round(IFRAME_HEIGHT * sideScale);
 
   // For split / overlay modes we use a single centered panel. Its height
   // is capped at 900px or the available stage height, whichever is smaller.
@@ -309,10 +356,10 @@ export default function BeforeAfterViewer() {
               title={nodeA?.title || "none"}
               src={nodeA?.sandbox_url}
               widthPx={widthPx}
-              heightPx={IFRAME_HEIGHT}
+              heightPx={heightA}
               scale={sideScale}
               scaledW={scaledW}
-              scaledH={scaledH}
+              scaledH={Math.round(heightA * sideScale)}
               sandbox={COMMON_IFRAME_SANDBOX}
             />
             <PagePanel
@@ -320,10 +367,10 @@ export default function BeforeAfterViewer() {
               title={nodeB?.title || "none"}
               src={nodeB?.sandbox_url}
               widthPx={widthPx}
-              heightPx={IFRAME_HEIGHT}
+              heightPx={heightB}
               scale={sideScale}
               scaledW={scaledW}
-              scaledH={scaledH}
+              scaledH={Math.round(heightB * sideScale)}
               sandbox={COMMON_IFRAME_SANDBOX}
             />
           </div>
