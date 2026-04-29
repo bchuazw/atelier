@@ -25,7 +25,7 @@ from typing import Any
 import httpx
 from mcp.server.fastmcp import FastMCP
 
-from .client import AtelierClient, api_base, web_base
+from .client import AtelierClient, api_base, default_workspace, web_base
 from .diff import compute_style_diff, summarize
 
 log = logging.getLogger(__name__)
@@ -78,6 +78,24 @@ def _variant_summary(child: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _build_project_url(project_id: str, workspace: str | None) -> str:
+    """Build the canvas deep-link URL the user should open.
+
+    `?project=<id>` auto-loads the project on first mount (handler in
+    apps/web/src/App.tsx). `?ws=<code>` triggers the join-workspace
+    confirm so a user opening the URL from another browser/account is
+    pulled into the correct workspace and sees the project's recents
+    siblings. Both params are independent — including only project=<id>
+    works if the recipient is already in the right workspace.
+    """
+    from urllib.parse import urlencode
+
+    params: dict[str, str] = {"project": project_id}
+    if workspace:
+        params["ws"] = workspace
+    return f"{web_base()}/?{urlencode(params)}"
+
+
 def _http_error_message(e: httpx.HTTPStatusError) -> str:
     """Render an httpx.HTTPStatusError into a single human-readable line.
 
@@ -115,6 +133,7 @@ def build_server() -> FastMCP:
         primary_color: str | None = None,
         body_font: str | None = None,
         tone: str | None = None,
+        workspace: str | None = None,
     ) -> dict[str, Any]:
         """Create a new Atelier exploration project.
 
@@ -125,12 +144,20 @@ def build_server() -> FastMCP:
         `tone`) are stored as Style Pins and injected as hard constraints
         on every subsequent fork prompt.
 
+        `workspace` is the user's 8-character workspace code (e.g.
+        "C2100BCH"). Pass it so the new project shows up in their web
+        dashboard's recents list. Falls back to the ATELIER_WORKSPACE env
+        var when omitted; if neither is set the project is created untagged
+        (reachable only via direct URL — useful for system jobs but not
+        what an agent acting on a user's behalf wants).
+
         Returns:
           {
             "project_id": str,
             "seed_node_id": str,           # parent for the first fork
-            "web_url": str,                # bare canvas URL (no deep link)
+            "web_url": str,                # canvas deep-link with workspace
             "name": str,
+            "workspace": str | null,       # what tag the project was given
           }
         """
         if seed_html and seed_url:
@@ -142,20 +169,26 @@ def build_server() -> FastMCP:
                 seed_html=seed_html,
                 seed_url=seed_url,
                 style_pins=style_pins or None,
+                workspace=workspace,
             )
         except httpx.HTTPStatusError as e:
             return {"error": _http_error_message(e)}
         except httpx.HTTPError as e:
             return {"error": f"HTTP error talking to Atelier API: {e}"}
+        # Resolve the effective workspace tag (explicit arg → env var →
+        # null) so the response is self-describing — the agent can quote
+        # it back to the user when telling them the URL.
+        used_ws = workspace if workspace is not None else default_workspace()
         return {
             "project_id": proj["id"],
             "seed_node_id": proj.get("working_node_id"),
-            "web_url": web_base(),
+            "web_url": _build_project_url(proj["id"], used_ws),
             "name": proj.get("name"),
+            "workspace": used_ws,
         }
 
     @mcp.tool()
-    async def atelier_list_projects() -> list[dict[str, Any]]:
+    async def atelier_list_projects(workspace: str | None = None) -> list[dict[str, Any]]:
         """List existing (non-archived) Atelier projects.
 
         Use when the agent needs to find a project the user already
@@ -163,11 +196,32 @@ def build_server() -> FastMCP:
         landing page exploration", and the agent needs to look up the
         project id by name.
 
+        `workspace` filters to a specific user's workspace code. Falls back
+        to the ATELIER_WORKSPACE env var when omitted; pass the empty string
+        ("") to force admin mode (every project across every workspace),
+        useful for cross-workspace audits.
+
         Returns a list of:
-          {id, name, node_count, last_activity, seed_url}
+          {id, name, node_count, last_activity, seed_url, workspace}
+        where `workspace` is the filter that was applied (or null for admin).
         """
+        # Empty string is a sentinel for "force admin mode" — explicit
+        # opt-out of the env-var fallback that the client would otherwise
+        # apply. None means "use env var if set, else admin".
+        ws_arg: str | None
+        if workspace == "":
+            ws_arg = None  # bypass env fallback
+            applied = None
+        else:
+            ws_arg = workspace
+            applied = workspace if workspace is not None else default_workspace()
         try:
-            projects = await client.list_projects(include_archived=False)
+            # When applied is None we want admin (no filter); when applied
+            # is set we filter. The client treats None as "use env" so we
+            # have to pass the resolved value explicitly here.
+            projects = await client.list_projects(
+                include_archived=False, workspace=applied
+            )
         except httpx.HTTPStatusError as e:
             return [{"error": _http_error_message(e)}]
         except httpx.HTTPError as e:
@@ -179,6 +233,7 @@ def build_server() -> FastMCP:
                 "node_count": p.get("node_count", 0),
                 "last_activity": p.get("last_activity"),
                 "seed_url": p.get("seed_url"),
+                "workspace": applied,
             }
             for p in projects
         ]
@@ -358,9 +413,17 @@ def build_server() -> FastMCP:
             "b_title": b_export.get("title"),
             "diff": diff,
             "summary": summarize(diff),
-            # Keep the canvas URL so the agent can still tell the user
-            # "for visual side-by-side, open <url> and click Compare".
-            "web_compare_url": web_base(),
+            # Canvas URL for visual side-by-side. We can't include the
+            # specific A/B selection in the URL (that's React state, not
+            # a route param), but we CAN make the recipient land in the
+            # right workspace + project so they only have to click Compare
+            # twice. project=<id> picks one of the two variants' parent
+            # projects — both variants must belong to the same project for
+            # compare to be meaningful, so either works.
+            "web_compare_url": _build_project_url(
+                a_export.get("project_id") or b_export.get("project_id") or "",
+                default_workspace(),
+            ),
         }
 
     # ── Publish + URL helpers ──────────────────────────────────────
@@ -388,19 +451,23 @@ def build_server() -> FastMCP:
         }
 
     @mcp.tool()
-    async def atelier_get_project_url(project_id: str) -> str:
-        """Build the canvas URL the user should open to inspect a project.
+    async def atelier_get_project_url(
+        project_id: str, workspace: str | None = None
+    ) -> str:
+        """Build the canvas deep-link URL the user should open.
 
-        Atelier's React app does NOT currently honor a `?project=<id>`
-        query-string deep link — opening it lands you on the recent-
-        projects empty state. We return the bare web URL plus the project
-        id as a hint string so the agent can phrase its message as
-        "open <url> and click into the project named X (id: <id>)".
+        The web app honors `?project=<id>` to auto-load a project AND
+        `?ws=<code>` to switch into a specific workspace before loading.
+        Pass `workspace` (or set ATELIER_WORKSPACE) so a recipient who
+        opens the URL is pulled into the right workspace — without it,
+        their browser may already belong to a different workspace and
+        the project won't appear in their recents alongside it.
 
-        Returns a single string of the form:
-          "https://atelier-web.onrender.com  (project id: <id>)"
+        Returns a single URL string ready to paste into a chat / email:
+          "https://atelier-web.onrender.com/?project=<id>&ws=<code>"
         """
-        return f"{web_base()}  (project id: {project_id})"
+        used_ws = workspace if workspace is not None else default_workspace()
+        return _build_project_url(project_id, used_ws)
 
     return mcp
 

@@ -38,6 +38,17 @@ def web_base() -> str:
     return raw
 
 
+def default_workspace() -> str | None:
+    """Resolve the workspace code this MCP instance creates + lists projects
+    under. Reads `ATELIER_WORKSPACE` env var. When unset, the MCP server
+    creates untagged projects (admin mode) and lists every project across
+    every workspace — fine for system maintenance, but for an agent acting
+    on a specific user's behalf the user should provide their workspace
+    code so the projects this agent creates show up in their recents."""
+    raw = (os.environ.get("ATELIER_WORKSPACE") or "").strip()
+    return raw or None
+
+
 class AtelierClient:
     """Async HTTP client that mirrors the FastAPI route surface 1:1.
 
@@ -62,6 +73,7 @@ class AtelierClient:
         seed_html: str | None = None,
         seed_url: str | None = None,
         style_pins: list[dict[str, Any]] | None = None,
+        workspace: str | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {"name": name}
         if seed_url:
@@ -70,14 +82,30 @@ class AtelierClient:
             payload["seed_html"] = seed_html
         if style_pins:
             payload["style_pins"] = style_pins
+        # Stamp the project with a workspace so the user's web dashboard
+        # actually shows it. Falls back to the ATELIER_WORKSPACE env var
+        # when the caller didn't pass one explicitly.
+        ws = workspace if workspace is not None else default_workspace()
+        if ws:
+            payload["workspace_id"] = ws
         async with self._client() as c:
             r = await c.post("/projects", json=payload)
             r.raise_for_status()
             return r.json()
 
-    async def list_projects(self, include_archived: bool = False) -> list[dict[str, Any]]:
+    async def list_projects(
+        self, include_archived: bool = False, workspace: str | None = None
+    ) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {"include_archived": str(include_archived).lower()}
+        # Resolve workspace: explicit arg > env var > none. None means
+        # admin mode (every project across every workspace) — kept as the
+        # default so legacy MCP invocations + smoke tests still see the
+        # full list.
+        ws = workspace if workspace is not None else default_workspace()
+        if ws:
+            params["workspace"] = ws
         async with self._client() as c:
-            r = await c.get("/projects", params={"include_archived": str(include_archived).lower()})
+            r = await c.get("/projects", params=params)
             r.raise_for_status()
             return r.json()
 

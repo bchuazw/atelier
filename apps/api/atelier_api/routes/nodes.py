@@ -256,6 +256,10 @@ async def export_node(node_id: str, session: AsyncSession = Depends(get_session)
 
     return {
         "node_id": node.id,
+        # `project_id` exposes which project this node belongs to so MCP
+        # callers (e.g. atelier_compare) can build a deep-link URL that
+        # auto-loads the right project on the recipient's canvas.
+        "project_id": node.project_id,
         "title": node.title,
         "summary": node.summary,
         "html": html,

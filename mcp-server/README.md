@@ -91,16 +91,25 @@ project-local equivalent):
       "cwd": "/absolute/path/to/atelier/mcp-server",
       "env": {
         "ATELIER_API_BASE": "https://atelier-api-wpx8.onrender.com/api/v1",
-        "ATELIER_WEB_BASE": "https://atelier-web.onrender.com"
+        "ATELIER_WEB_BASE": "https://atelier-web.onrender.com",
+        "ATELIER_WORKSPACE": "C2100BCH"
       }
     }
   }
 }
 ```
 
-Both env vars are optional — the server defaults to the public Atelier
-deployment. Override `ATELIER_API_BASE` to point at a self-hosted
-backend (e.g., `http://localhost:8000/api/v1` for local development).
+All three env vars are optional. Defaults point at the public Atelier
+deployment. Override `ATELIER_API_BASE` to use a self-hosted backend
+(e.g., `http://localhost:8000/api/v1` for local development).
+
+`ATELIER_WORKSPACE` is the user's 8-character workspace code (visible
+under TopBar → Workspace on atelier-web). When set, every project this
+MCP creates is tagged with it AND every project URL the MCP returns
+includes `?ws=<code>` so the user opening the URL is auto-pulled into
+the right workspace and sees the project alongside its siblings. Without
+it, projects this MCP creates are untagged — reachable via direct URL
+only, never appearing in the user's web dashboard recents list.
 
 After saving, restart Claude Code and run `/mcp` to confirm the
 `atelier` server is connected and the 8 tools are available.
