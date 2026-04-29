@@ -9,8 +9,15 @@
 
 import type { NodeDTO } from "./api";
 
-const COLUMN_WIDTH = 290;
-const ROW_HEIGHT = 290;
+// Cards are 260px wide. 340 column width = 80px gap between siblings —
+// roomy enough that variants don't visually crowd each other and edge
+// labels have space to render. Bumped from a tight 290 (only 30px gap)
+// after the canvas was reading as cramped/buggy under heavier subtrees.
+const COLUMN_WIDTH = 340;
+// Cards are ~280px tall (140 thumbnail + ~140 metadata + actions). 320
+// row height gives ~40px vertical breathing room between parent and
+// child rows, matching the same airy feel the column bump introduced.
+const ROW_HEIGHT = 320;
 
 type LayoutOut = Record<string, { x: number; y: number }>;
 

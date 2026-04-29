@@ -18,8 +18,8 @@ from atelier_api.db.models import Node
 
 # Card dimensions (must match VariantNode.tsx). Horizontal step is the card
 # width plus a comfortable gap so dashed merge edges + edge labels still fit.
-CHILD_X_STEP = 290.0
-CHILD_Y_STEP = 290.0
+CHILD_X_STEP = 340.0
+CHILD_Y_STEP = 320.0
 
 
 async def next_child_position(

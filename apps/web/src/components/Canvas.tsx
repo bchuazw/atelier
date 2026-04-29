@@ -59,19 +59,43 @@ function CanvasInner() {
     championedIds,
   } = useUI();
   const rf = useReactFlow();
-  // Re-fit the view whenever the number of nodes changes (i.e. a fork or
-  // merge produced a new variant). Without this the new node lands wherever
-  // the layout helper put it — typically below the visible viewport, hidden
-  // behind the PromptBar overlay. Using FIT_VIEW_PADDING_FOR_PROMPTBAR keeps
-  // a comfortable bottom margin so the new node always lands above the bar.
-  const lastFittedCount = useRef(0);
+  // Auto-tidy + re-fit whenever the SET of nodes changes (a fork added a
+  // variant, a delete removed one, a project loaded). Compared to the
+  // pre-this-cycle behaviour where Tidy was a manual button, the canvas
+  // now stays uniformly spaced by default — variants never overlap, gaps
+  // left by deleted siblings close on the next change. We compare on a
+  // stable id-set fingerprint (sorted ids joined) so individual drag
+  // positions don't trigger a layout pass and fight the user's manual
+  // arrangement; only add/delete events do.
+  const lastNodeSetKey = useRef("");
   useEffect(() => {
-    if (nodes.length === lastFittedCount.current) return;
     if (nodes.length === 0) {
-      lastFittedCount.current = 0;
+      lastNodeSetKey.current = "";
       return;
     }
-    // Defer one frame so React Flow has actually rendered the new node.
+    const key = nodes.map((n) => n.id).sort().join("|");
+    if (key === lastNodeSetKey.current) return;
+    lastNodeSetKey.current = key;
+
+    // Compute the canonical tree layout. diffPositions returns only the
+    // nodes that actually moved (>0.5px) so we don't fire pointless
+    // PATCHes when the canvas is already clean.
+    const target = computeTreeLayout(nodes);
+    const moves = diffPositions(nodes, target);
+    if (moves.length > 0) {
+      // Optimistic local snap + persistence in parallel. React Flow
+      // handles the smooth transition between old and new positions.
+      for (const m of moves) {
+        const n = nodes.find((x) => x.id === m.id);
+        if (n) upsertNode({ ...n, position: { x: m.x, y: m.y } });
+      }
+      // Fire-and-forget — UI doesn't wait, server-side just persists.
+      void Promise.allSettled(
+        moves.map((m) => api.patchNode(m.id, { position_x: m.x, position_y: m.y }))
+      );
+    }
+
+    // Re-fit after the snap so the new node always lands in view.
     const handle = window.requestAnimationFrame(() => {
       try {
         rf.fitView({
@@ -84,9 +108,11 @@ function CanvasInner() {
         // ReactFlow not yet ready — skip silently.
       }
     });
-    lastFittedCount.current = nodes.length;
     return () => window.cancelAnimationFrame(handle);
-  }, [nodes.length, rf]);
+    // We deliberately depend on `nodes` (not just length) so a single
+    // node ID change still triggers re-layout, but the key check above
+    // gates the actual work.
+  }, [nodes, rf, upsertNode]);
 
   // Re-fit whenever the user toggles Showcase mode — the visible node count
   // and positions both change but the source `nodes` array doesn't, so the
