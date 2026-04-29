@@ -15,6 +15,7 @@ import {
   Star,
   ChevronDown,
   Loader2,
+  Users,
 } from "lucide-react";
 import clsx from "clsx";
 import { api, getWorkspaceId, type ProjectDTO } from "@/lib/api";
@@ -39,6 +40,7 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
     championedIds,
     showcaseMode,
     setShowcaseMode,
+    openWorkspaceDialog,
   } = useUI();
 
   const targetId = useMemo(() => {
@@ -297,6 +299,13 @@ export default function TopBar({ onNewProject }: { onNewProject: () => void }) {
               </button>
             </>
           )}
+          <button
+            onClick={openWorkspaceDialog}
+            className="flex items-center gap-1 px-2.5 py-1 rounded bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs"
+            title="Share workspace code with a teammate, or join their workspace — no login required"
+          >
+            <Users className="w-3.5 h-3.5" /> Workspace
+          </button>
           <button
             onClick={onNewProject}
             className="flex items-center gap-1 px-2.5 py-1 rounded bg-amber-500 hover:bg-amber-400 text-black font-medium text-xs"

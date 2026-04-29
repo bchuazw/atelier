@@ -120,6 +120,46 @@ async def test_archive_then_list_filters(client):
 
 
 @pytest.mark.asyncio
+async def test_patch_workspace_id_retags(client):
+    """Re-tag a project from one workspace to another. The receiving
+    workspace's list now includes it; the originating workspace no longer
+    sees it. Mirrors the 'Adopt this project' recovery flow."""
+    p = (await _create(client, "movable", workspace_id="ws-old")).json()
+    # Confirm initial visibility
+    old_list = (await client.get("/api/v1/projects?workspace=ws-old")).json()
+    assert {pp["id"] for pp in old_list} == {p["id"]}
+    new_list = (await client.get("/api/v1/projects?workspace=ws-new")).json()
+    assert new_list == []
+    # Re-tag
+    r = await client.patch(
+        f"/api/v1/projects/{p['id']}", json={"workspace_id": "ws-new"}
+    )
+    assert r.status_code == 200, r.text
+    # Old workspace no longer sees it; new workspace does
+    old_list_after = (await client.get("/api/v1/projects?workspace=ws-old")).json()
+    new_list_after = (await client.get("/api/v1/projects?workspace=ws-new")).json()
+    assert old_list_after == []
+    assert {pp["id"] for pp in new_list_after} == {p["id"]}
+
+
+@pytest.mark.asyncio
+async def test_patch_workspace_id_empty_clears(client):
+    """Empty-string workspace_id clears the tag → project becomes untagged
+    (visible only via direct URL, not in any workspace's recents)."""
+    p = (await _create(client, "untag-me", workspace_id="ws-x")).json()
+    r = await client.patch(
+        f"/api/v1/projects/{p['id']}", json={"workspace_id": ""}
+    )
+    assert r.status_code == 200
+    # Untagged → no workspace's filtered list includes it
+    list_x = (await client.get("/api/v1/projects?workspace=ws-x")).json()
+    assert list_x == []
+    # But admin/no-filter still sees it
+    list_all = (await client.get("/api/v1/projects")).json()
+    assert p["id"] in {pp["id"] for pp in list_all}
+
+
+@pytest.mark.asyncio
 async def test_delete_project(client):
     p = (await _create(client, "delete-me", workspace_id="ws-d")).json()
     r = await client.delete(f"/api/v1/projects/{p['id']}")

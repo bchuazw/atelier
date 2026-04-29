@@ -97,6 +97,11 @@ type UIState = {
   // head — subsequent enqueues wait their turn so back-to-back showConfirm
   // calls don't stack overlapping modals.
   dialogQueue: DialogRequest[];
+  // Workspace share + switch dialog. The current workspace_id is sourced
+  // from `getWorkspaceId()` in api.ts (localStorage-backed); this flag just
+  // controls whether the modal is visible. Open from TopBar's "Workspace"
+  // button or the EmptyState's "Switch workspace" link.
+  workspaceDialogOpen: boolean;
   // Per-project "boss-presentation" mode: user stars 2-3 finalist variants
   // → toggling Showcase hides everything else and re-grids the survivors.
   // Persisted to localStorage scoped by project id (single-user workspace,
@@ -178,6 +183,9 @@ type UIState = {
   }) => Promise<void>;
   // Pop the head of dialogQueue and resolve its promise. Used by AppDialog.
   resolveDialog: (id: string, ok: boolean) => void;
+  // Workspace share dialog open/close.
+  openWorkspaceDialog: () => void;
+  closeWorkspaceDialog: () => void;
   // Champion star + Showcase view. Toggling a champion star persists the
   // change to localStorage immediately (so a refresh keeps the user's
   // selection). Showcase mode is in-memory only — it's a per-session view
@@ -244,6 +252,7 @@ export const useUI = create<UIState>((set) => ({
   dialogQueue: [],
   championedIds: [],
   showcaseMode: false,
+  workspaceDialogOpen: false,
 
   setTree: (project, nodes, edges) =>
     set({
@@ -475,6 +484,8 @@ export const useUI = create<UIState>((set) => ({
       else target.resolve();
       return { dialogQueue: s.dialogQueue.filter((d) => d.id !== id) };
     }),
+  openWorkspaceDialog: () => set({ workspaceDialogOpen: true }),
+  closeWorkspaceDialog: () => set({ workspaceDialogOpen: false }),
   toggleChampion: (nodeId) =>
     set((s) => {
       const next = s.championedIds.includes(nodeId)

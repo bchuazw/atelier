@@ -17,8 +17,9 @@ import UndoToast from "./components/UndoToast";
 import ErrorToast from "./components/ErrorToast";
 import CostCapBanner from "./components/CostCapBanner";
 import AppDialog from "./components/AppDialog";
+import WorkspaceDialog from "./components/WorkspaceDialog";
 import { useUI } from "./lib/store";
-import { api } from "./lib/api";
+import { api, displayWorkspaceCode, getWorkspaceId, setWorkspaceId } from "./lib/api";
 
 export default function App() {
   const { project } = useUI();
@@ -40,6 +41,59 @@ export default function App() {
           "Backend not reachable. The API service may be waking from a cold start — try again in 20-30s."
         );
       });
+  }, []);
+
+  // Workspace deep-links. `?ws=<code>` joins a teammate's workspace —
+  // their browser's localStorage workspace_id flips to the same value as
+  // the sender's, so they see the same project list. Skipped if already
+  // a member (no-op). Confirms before swapping so a stray click on a
+  // shared link doesn't blow away the user's existing workspace silently;
+  // the previous code is auto-saved to recents (see setWorkspaceId in
+  // api.ts) for one-click switch-back.
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const ws = params.get("ws");
+      if (!ws) return;
+      const current = getWorkspaceId();
+      // Strip the ws param after handling — refresh shouldn't re-prompt
+      // and the URL stays clean for sharing the actual project link.
+      const stripWs = () => {
+        try {
+          const url = new URL(window.location.href);
+          url.searchParams.delete("ws");
+          window.history.replaceState({}, "", url.toString());
+        } catch {
+          /* noop */
+        }
+      };
+      if (ws === current) {
+        stripWs();
+        return;
+      }
+      void useUI
+        .getState()
+        .showConfirm({
+          title: "Join this workspace?",
+          message:
+            `You're about to switch from your current workspace into "${displayWorkspaceCode(ws)}".\n\n` +
+            `You'll see and edit every project in that workspace. Your previous workspace stays — ` +
+            `find it under "Recent workspaces" in the Workspace panel anytime.`,
+          confirmLabel: "Join",
+          cancelLabel: "Cancel",
+        })
+        .then((ok) => {
+          if (ok) {
+            setWorkspaceId(ws);
+            // Drop loaded project (if any) so the EmptyState refetches the
+            // new workspace's list, and clear the ws param.
+            useUI.getState().setTree(null, [], []);
+          }
+          stripWs();
+        });
+    } catch {
+      /* URL parsing should never throw, but defensive */
+    }
   }, []);
 
   // Project deep-links. `?project=<id>` auto-loads a project on first mount
@@ -227,6 +281,7 @@ export default function App() {
       <UndoToast />
       <ErrorToast />
       <AppDialog />
+      <WorkspaceDialog />
     </div>
   );
 }

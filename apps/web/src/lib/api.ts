@@ -282,27 +282,51 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 // new project so single-tenant deployments don't show every visitor's work
 // to every other visitor.
 const WORKSPACE_KEY = "atelier:workspace_id";
+// Recent workspaces the user has joined — used to populate the "Switch
+// back" list in the share modal so a user who joins a teammate's
+// workspace doesn't permanently lose their original.
+const WORKSPACE_RECENTS_KEY = "atelier:workspace_recents";
+const WORKSPACE_RECENTS_LIMIT = 8;
 
-function genUUID(): string {
-  // Prefer the platform UUID; fall back to a timestamp+random combo on
-  // older browsers (no native crypto.randomUUID).
+// Friendly 8-char workspace code. Drops 0/O/1/I/L to avoid hand-typed
+// ambiguity ("zero or O?"). 32^8 ≈ 1.1T combos — collision-safe at any
+// realistic scale, brute-force-resistant under the existing rate limit.
+const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+function genWorkspaceCode(len = 8): string {
+  // crypto.getRandomValues for unbiased pick; fall back to Math.random
+  // for the same private-mode/older-browser path getWorkspaceId already
+  // handles.
   const c = (typeof crypto !== "undefined" ? crypto : undefined) as
-    | (Crypto & { randomUUID?: () => string })
+    | (Crypto & { getRandomValues?: <T extends ArrayBufferView>(arr: T) => T })
     | undefined;
-  if (c && typeof c.randomUUID === "function") return c.randomUUID();
-  return (
-    Date.now().toString(36) +
-    "-" +
-    Math.random().toString(36).slice(2, 10) +
-    Math.random().toString(36).slice(2, 10)
-  );
+  let chars = "";
+  if (c?.getRandomValues) {
+    const buf = new Uint32Array(len);
+    c.getRandomValues(buf);
+    for (let i = 0; i < len; i++) {
+      chars += CODE_ALPHABET[buf[i] % CODE_ALPHABET.length];
+    }
+  } else {
+    for (let i = 0; i < len; i++) {
+      chars += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
+    }
+  }
+  return chars;
+}
+
+/** Display-friendly form of a workspace code. UUID-format strings (legacy
+ *  workspaces from before friendly codes existed) are returned as-is — they
+ *  still work as workspace identifiers, they're just longer. New codes are
+ *  already 8 chars. */
+export function displayWorkspaceCode(id: string): string {
+  return id;
 }
 
 export function getWorkspaceId(): string {
   try {
     let id = localStorage.getItem(WORKSPACE_KEY);
     if (!id) {
-      id = genUUID();
+      id = genWorkspaceCode();
       localStorage.setItem(WORKSPACE_KEY, id);
     }
     return id;
@@ -311,6 +335,44 @@ export function getWorkspaceId(): string {
     // back to a per-session id so the rest of the app still works (no
     // filtering at worst).
     return "anon";
+  }
+}
+
+/** Switch the active workspace. Pushes the previous one onto the recents
+ *  list (deduped, capped) so the user can switch back. Returns the
+ *  previous code so callers can show a "switched from X to Y" toast. */
+export function setWorkspaceId(next: string): string | null {
+  try {
+    const prev = localStorage.getItem(WORKSPACE_KEY);
+    if (prev && prev !== next) {
+      const raw = localStorage.getItem(WORKSPACE_RECENTS_KEY);
+      let recents: string[] = [];
+      try {
+        recents = raw ? (JSON.parse(raw) as string[]) : [];
+      } catch {
+        recents = [];
+      }
+      recents = [prev, ...recents.filter((r) => r !== prev && r !== next)].slice(
+        0,
+        WORKSPACE_RECENTS_LIMIT
+      );
+      localStorage.setItem(WORKSPACE_RECENTS_KEY, JSON.stringify(recents));
+    }
+    localStorage.setItem(WORKSPACE_KEY, next);
+    return prev;
+  } catch {
+    return null;
+  }
+}
+
+/** Workspaces the user has previously been a member of — for the
+ *  "switch back" list in the workspace settings UI. */
+export function getRecentWorkspaces(): string[] {
+  try {
+    const raw = localStorage.getItem(WORKSPACE_RECENTS_KEY);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
   }
 }
 
@@ -369,6 +431,10 @@ export const api = {
       // Soft-archive toggle. true hides from default recent list; false
       // restores. Persisted in project.settings["archived"].
       archived?: boolean;
+      // Re-tag the project to a different workspace code. Empty string
+      // clears the tag (project becomes untagged → only reachable via
+      // direct URL). Used by the "Adopt this project" recovery flow.
+      workspace_id?: string;
     }
   ) =>
     request<{

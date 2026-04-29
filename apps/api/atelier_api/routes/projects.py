@@ -119,6 +119,15 @@ class ProjectPatchIn(BaseModel):
     # `project.settings["archived"]`. Legacy projects with no key behave as
     # archived=false.
     archived: bool | None = None
+    # Re-tag the project to a different workspace code. Used by the
+    # "Adopt this project" recovery flow when a user opens a deep-linked
+    # project that belongs to another workspace, and by the "Move to
+    # workspace" flow if we add cross-workspace moves later. Empty string
+    # ("") clears the tag, making the project untagged (only reachable
+    # via direct URL). Trust model: cookie-based, no auth — anyone with
+    # the project URL can already edit, so re-tagging is the same blast
+    # radius. Real auth (Future Improvement #1) tightens this.
+    workspace_id: str | None = Field(default=None, max_length=128)
 
 
 @router.post("", response_model=ProjectOut)
@@ -455,6 +464,17 @@ async def patch_project(
             current["archived"] = True
         else:
             current.pop("archived", None)
+    if body.workspace_id is not None:
+        # Re-tag to a different workspace. Empty string clears the tag
+        # (untagged → only reachable via direct URL). Trim + length guard
+        # mirrors CreateProjectIn so a user can't sneak a 5MB string in.
+        new_ws = body.workspace_id.strip()
+        if len(new_ws) > 128:
+            raise HTTPException(status_code=400, detail="Workspace code must be ≤128 chars.")
+        if new_ws:
+            current["workspace_id"] = new_ws
+        else:
+            current.pop("workspace_id", None)
     project.settings = current
     if body.name is not None:
         new_name = body.name.strip()

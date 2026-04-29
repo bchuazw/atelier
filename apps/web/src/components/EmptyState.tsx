@@ -154,13 +154,19 @@ export default function EmptyState({ onNewProject }: { onNewProject: () => void 
           </p>
         </div>
 
-        <div className="flex justify-center">
+        <div className="flex flex-col items-center gap-2">
           <button
             onClick={onNewProject}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-medium"
           >
             <MousePointerClick className="w-4 h-4" />
             Create a new project
+          </button>
+          <button
+            onClick={() => useUI.getState().openWorkspaceDialog()}
+            className="text-[11px] text-zinc-500 hover:text-zinc-900 underline-offset-2 hover:underline"
+          >
+            Have a workspace code? Share or switch
           </button>
         </div>
 
