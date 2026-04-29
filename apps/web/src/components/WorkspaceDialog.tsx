@@ -3,12 +3,10 @@ import { Users, Copy, Check, X, ArrowRight, History } from "lucide-react";
 import clsx from "clsx";
 import { useUI } from "@/lib/store";
 import {
-  api,
   displayWorkspaceCode,
   getRecentWorkspaces,
   getWorkspaceId,
   setWorkspaceId,
-  type ProjectDTO,
 } from "@/lib/api";
 
 /**
@@ -27,8 +25,7 @@ import {
  * the substitute for proper multi-account support until real auth lands.
  */
 export default function WorkspaceDialog() {
-  const { workspaceDialogOpen, closeWorkspaceDialog, setTree, project, includeArchived } =
-    useUI();
+  const { workspaceDialogOpen, closeWorkspaceDialog } = useUI();
   const [code, setCode] = useState("");
   const [joinInput, setJoinInput] = useState("");
   const [copiedCode, setCopiedCode] = useState(false);
@@ -85,25 +82,13 @@ export default function WorkspaceDialog() {
     setError(null);
     try {
       setWorkspaceId(next);
-      // Reload recents projects scoped to the new workspace + drop any
-      // currently-loaded project state so the canvas redirects to the
-      // dashboard. The empty-state component re-fetches on mount.
-      setTree(null, [], []);
-      // Refresh tree state if a project is open + still belongs to the
-      // new workspace. Otherwise the EmptyState dashboard renders fresh.
-      if (project) {
-        try {
-          const tree = await api.getTree(project.id, includeArchived);
-          setTree(tree.project as ProjectDTO, tree.nodes, tree.edges);
-        } catch {
-          // Project doesn't belong to the new workspace anymore — leave
-          // the dashboard view (already cleared above).
-        }
-      }
-      closeWorkspaceDialog();
+      // EmptyState captures workspaceId at mount, so a soft state reset
+      // wouldn't make it refetch. Hard reload guarantees every component
+      // re-reads the new workspace_id from localStorage. The bundle is
+      // already cached; perceived latency is just the API list call.
+      window.location.reload();
     } catch (e) {
       setError((e as Error)?.message || "Couldn't switch workspaces");
-    } finally {
       setBusy(false);
     }
   }

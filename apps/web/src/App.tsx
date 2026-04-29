@@ -85,11 +85,17 @@ export default function App() {
         .then((ok) => {
           if (ok) {
             setWorkspaceId(ws);
-            // Drop loaded project (if any) so the EmptyState refetches the
-            // new workspace's list, and clear the ws param.
-            useUI.getState().setTree(null, [], []);
+            stripWs();
+            // EmptyState captures workspaceId at mount via useState init;
+            // a soft state reset isn't enough to make it refetch with the
+            // new code. Hard reload is the simplest correct path — fast
+            // because the bundle is already cached, and it guarantees
+            // every component re-reads the new workspace_id from
+            // localStorage on its next mount.
+            window.location.reload();
+          } else {
+            stripWs();
           }
-          stripWs();
         });
     } catch {
       /* URL parsing should never throw, but defensive */
